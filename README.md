@@ -91,7 +91,7 @@ python3 main.py dashboard
 ## Setup Instructions
 ### 1. Clone and enter project
 ```bash
-git clone <your-repo-url>
+git clone <https://github.com/VenommCS/arabic-osint-intelligence-platform>
 cd arabic_osint_platform
 ```
 
