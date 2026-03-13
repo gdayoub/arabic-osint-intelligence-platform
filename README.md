@@ -1,4 +1,8 @@
 # Arabic Geopolitical OSINT Intelligence Platform
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![Streamlit](https://img.shields.io/badge/dashboard-streamlit-red)
+![Postgres](https://img.shields.io/badge/database-postgresql-blue)
+![Docker](https://img.shields.io/badge/container-docker-blue)
 
 Production-style Arabic Open Source Intelligence (OSINT) platform for multi-source geopolitical news monitoring.
 
@@ -137,11 +141,22 @@ docker compose up --build
 3. Processing normalizes Arabic text and generates topic + escalation labels.
 4. Dashboard surfaces trends, source patterns, and weekly intelligence brief.
 
-## Example Screenshots (Placeholders)
-- `docs/screenshots/overview.png`
-- `docs/screenshots/explorer.png`
-- `docs/screenshots/trends.png`
-- `docs/screenshots/intelligence_summary.png`
+## Dashboard Preview
+
+### Overview
+![Overview](docs/screenshots/dashboard_overview.png)
+
+### Article Explorer
+![Explorer](docs/screenshots/article_explorer.png)
+
+### Trend Analysis
+![Trends](docs/screenshots/trend_analysis.png)
+
+### Intelligence Summary
+![Summary](docs/screenshots/intelligence_summary.png)
+
+### Full Dashboard
+![Dashboard](docs/screenshots/full_dashboard.png)
 
 ## Testing
 ```bash
@@ -158,13 +173,12 @@ If source HTML changes, only update `extract_article_links()` and `parse_article
 
 ## Future Improvements
 - Airflow-based scheduling and data quality checks.
-- AraBERT/transformer classifier replacing TF-IDF baseline.
 - Vector search for semantic incident retrieval.
 - FastAPI service layer for programmatic access.
 - Cloud deployment (Render/Railway) with managed Postgres.
-- Human-in-the-loop analyst feedback for improved label quality.
 
-## Resume-Ready Bullet Points
+
+## Engineering Highlights
 - Built a production-style Arabic OSINT pipeline ingesting multi-source geopolitical news into PostgreSQL with deduplication and layered data modeling.
 - Implemented Arabic NLP normalization and explainable topic/escalation classification to support intelligence-style monitoring.
 - Designed and shipped an interactive Streamlit + Plotly intelligence console with filtering, trend analytics, and automated weekly briefing summaries.
