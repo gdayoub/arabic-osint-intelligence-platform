@@ -46,6 +46,7 @@ class Settings:
     aljazeera_seed_urls: List[str] | None = None
     bbc_seed_urls: List[str] | None = None
     cnn_seed_urls: List[str] | None = None
+    alarabiya_seed_urls: List[str] | None = None
 
     @property
     def database_url(self) -> str:
@@ -115,6 +116,16 @@ class Settings:
                         "https://arabic.cnn.com/middle-east,"
                         "https://arabic.cnn.com/world,"
                         "https://arabic.cnn.com/business"
+                    ),
+                )
+            ),
+            alarabiya_seed_urls=_split_csv(
+                os.getenv(
+                    "ALARABIYA_SEED_URLS",
+                    (
+                        "https://www.alarabiya.net/arab-and-world,"
+                        "https://www.alarabiya.net/politics,"
+                        "https://www.alarabiya.net/economy"
                     ),
                 )
             ),

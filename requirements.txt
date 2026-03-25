@@ -1,4 +1,6 @@
+anthropic>=0.40.0
 beautifulsoup4==4.12.3
+fastapi==0.115.6
 joblib==1.4.2
 numpy==1.26.4
 pandas==2.2.2
@@ -10,4 +12,5 @@ requests==2.32.3
 scikit-learn==1.5.1
 SQLAlchemy==2.0.32
 streamlit==1.37.1
+uvicorn==0.32.1
 pytest==8.3.2

@@ -1,0 +1,21 @@
+name: Scheduled OSINT Pipeline
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours at :00 UTC
+  workflow_dispatch:          # allows manual trigger from GitHub Actions UI
+
+jobs:
+  trigger-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Railway pipeline
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.RAILWAY_PIPELINE_URL }}/api/trigger-pipeline" \
+            --fail \
+            --silent \
+            --show-error
+        timeout-minutes: 2

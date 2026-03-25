@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from src.config.settings import SETTINGS
 from src.database.models import RawArticle
+from src.processing.ai_summarizer import generate_summary
 from src.processing.clean_text import clean_arabic_text
 from src.processing.escalation_scoring import score_escalation
 from src.processing.keyword_classifier import KeywordTopicClassifier
@@ -33,6 +34,7 @@ class ProcessedOutput:
     sentiment_or_escalation: str
     country_guess: str | None
     keyword_matches: dict
+    ai_summary: str | None = None
 
 
 class ArticleProcessingPipeline:
@@ -55,6 +57,12 @@ class ArticleProcessingPipeline:
         cls = self.classifier.classify(cleaned)
         escalation = score_escalation(cleaned)
 
+        ai_summary = generate_summary(
+            title=article.title or "",
+            cleaned_text=cleaned,
+            escalation=escalation.label,
+        )
+
         return ProcessedOutput(
             cleaned_text=cleaned,
             topic=cls.topic,
@@ -66,4 +74,5 @@ class ArticleProcessingPipeline:
                 "topic_score": cls.score,
                 "escalation_score": escalation.score,
             },
+            ai_summary=ai_summary,
         )

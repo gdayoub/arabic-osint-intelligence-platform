@@ -62,6 +62,7 @@ class ProcessedArticle(Base):
     country_guess: Mapped[str | None] = mapped_column(String(100), nullable=True)
     keyword_matches: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     ml_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     processed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

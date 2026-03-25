@@ -89,6 +89,7 @@ def upsert_processed_article(
     country_guess: str | None,
     keyword_matches: dict[str, Any] | None,
     ml_confidence: float | None = None,
+    ai_summary: str | None = None,
 ) -> ProcessedArticle:
     """Create or update processed record for a raw article."""
     stmt: Select[tuple[ProcessedArticle]] = select(ProcessedArticle).where(
@@ -103,6 +104,7 @@ def upsert_processed_article(
         existing.country_guess = country_guess
         existing.keyword_matches = keyword_matches
         existing.ml_confidence = ml_confidence
+        existing.ai_summary = ai_summary
         existing.processed_at = datetime.now(timezone.utc)
         return existing
 
@@ -114,6 +116,7 @@ def upsert_processed_article(
         country_guess=country_guess,
         keyword_matches=keyword_matches,
         ml_confidence=ml_confidence,
+        ai_summary=ai_summary,
         processed_at=datetime.now(timezone.utc),
     )
     session.add(processed)

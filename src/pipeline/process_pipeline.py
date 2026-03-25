@@ -35,6 +35,7 @@ def run_processing(batch_size: int = 500, write_snapshot: bool = True) -> dict:
                     sentiment_or_escalation=output.sentiment_or_escalation,
                     country_guess=output.country_guess,
                     keyword_matches=output.keyword_matches,
+                    ai_summary=output.ai_summary,
                 )
                 processed_count += 1
                 processed_rows.append(

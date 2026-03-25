@@ -12,6 +12,9 @@ COPY . .
 
 ENV PYTHONPATH=/app
 
+RUN chmod +x start.sh
+
+EXPOSE 8000
 EXPOSE 8501
 
-CMD ["streamlit", "run", "src/dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["./start.sh"]
