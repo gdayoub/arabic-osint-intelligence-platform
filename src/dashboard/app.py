@@ -1,4 +1,4 @@
-"""Dark, analyst-focused Streamlit intelligence monitoring console."""
+"""Premium dark intelligence monitoring console — red/black command center aesthetic."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from html import escape
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 from sqlalchemy import text
 
@@ -20,10 +21,15 @@ setup_logging()
 logger = logging.getLogger("dashboard")
 
 st.set_page_config(
-    page_title="Arabic Geopolitical OSINT Console",
+    page_title="OSINT Intelligence Console",
+    page_icon="",
     layout="wide",
 )
 
+
+# ---------------------------------------------------------------------------
+#  Design System Constants
+# ---------------------------------------------------------------------------
 
 ESCALATION_WEIGHT = {
     "high": 4.0,
@@ -41,312 +47,684 @@ TOPIC_WEIGHT = {
     "Uncategorized": 1.0,
 }
 
+# Chart color palette — red-dominant with neutrals
+CHART_RED_SCALE = [
+    "#DC2626", "#EF4444", "#F87171", "#FCA5A5",
+    "#A3A3A3", "#737373", "#525252", "#404040",
+]
+
+ESCALATION_COLORS = {
+    "high": "#DC2626",
+    "medium": "#F59E0B",
+    "low": "#22C55E",
+    "unknown": "#525252",
+}
+
+SOURCE_COLORS = ["#DC2626", "#F5F5F5", "#737373", "#404040", "#991B1B"]
+
+
+# ---------------------------------------------------------------------------
+#  Global CSS — Design System
+# ---------------------------------------------------------------------------
 
 def inject_global_css() -> None:
-    """Apply dashboard-wide dark UI styling."""
+    """Inject the full design system CSS."""
     st.markdown(
         """
         <style>
+        /* ── Import Premium Fonts ─────────────────────────────── */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+        /* ── Design Tokens ────────────────────────────────────── */
         :root {
-            --bg-main: #0b1220;
-            --bg-panel: #111b2e;
-            --bg-panel-2: #0f1728;
-            --bg-sidebar: #0d1627;
-            --text-main: #e6edf7;
-            --text-muted: #9cb0c7;
-            --accent: #4cc9f0;
-            --accent-2: #2dd4bf;
-            --border: #22334d;
-            --danger: #fb7185;
-            --shadow: 0 10px 26px rgba(4, 8, 18, 0.35);
+            --bg-base:       #0A0A0A;
+            --bg-surface:    #111111;
+            --bg-elevated:   #171717;
+            --bg-overlay:    #1A1A1A;
+            --border-subtle: #1F1F1F;
+            --border-default:#262626;
+            --border-strong: #404040;
+            --text-primary:  #F5F5F5;
+            --text-secondary:#A3A3A3;
+            --text-tertiary: #737373;
+            --text-muted:    #525252;
+            --accent:        #DC2626;
+            --accent-hover:  #EF4444;
+            --accent-muted:  #991B1B;
+            --accent-subtle: rgba(220,38,38,0.12);
+            --success:       #22C55E;
+            --warning:       #F59E0B;
+            --danger:        #DC2626;
+            --radius-sm:     6px;
+            --radius-md:     8px;
+            --radius-lg:     12px;
+            --shadow-sm:     0 1px 2px rgba(0,0,0,0.4);
+            --shadow-md:     0 4px 12px rgba(0,0,0,0.5);
+            --shadow-lg:     0 8px 24px rgba(0,0,0,0.6);
+            --font-sans:     'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono:     'JetBrains Mono', 'Fira Code', monospace;
+            --transition:    150ms cubic-bezier(0.4,0,0.2,1);
         }
 
+        /* ── Base Reset ───────────────────────────────────────── */
         [data-testid="stAppViewContainer"] {
-            background:
-                radial-gradient(1000px 420px at 94% -10%, rgba(76, 201, 240, 0.22), transparent 55%),
-                radial-gradient(900px 380px at -5% -15%, rgba(45, 212, 191, 0.16), transparent 55%),
-                linear-gradient(180deg, #0b1220 0%, #0a1221 48%, #09101c 100%);
-            color: var(--text-main);
+            background: var(--bg-base) !important;
+            color: var(--text-primary);
+            font-family: var(--font-sans);
         }
 
+        [data-testid="stHeader"] {
+            background: transparent !important;
+        }
+
+        [data-testid="stMainBlockContainer"] {
+            max-width: 1340px;
+            padding-top: 1rem;
+        }
+
+        /* ── Sidebar ──────────────────────────────────────────── */
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #0d1627 0%, #0a1323 100%);
-            border-right: 1px solid var(--border);
+            background: var(--bg-surface) !important;
+            border-right: 1px solid var(--border-subtle) !important;
+        }
+
+        [data-testid="stSidebar"] > div:first-child {
+            padding-top: 1.5rem;
         }
 
         [data-testid="stSidebar"] * {
-            color: var(--text-main) !important;
+            font-family: var(--font-sans) !important;
         }
 
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] .stMarkdown p {
-            color: var(--text-muted) !important;
+        [data-testid="stSidebar"] .stMarkdown p,
+        [data-testid="stSidebar"] label {
+            color: var(--text-secondary) !important;
+            font-size: 0.8rem !important;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            font-weight: 500;
         }
 
         [data-testid="stSidebar"] .stTextInput input,
         [data-testid="stSidebar"] .stDateInput input,
         [data-testid="stSidebar"] div[data-baseweb="select"] > div {
-            background: #0f1b30 !important;
-            border: 1px solid #2a3d5c !important;
-            border-radius: 10px !important;
+            background: var(--bg-elevated) !important;
+            border: 1px solid var(--border-default) !important;
+            border-radius: var(--radius-sm) !important;
+            color: var(--text-primary) !important;
+            font-family: var(--font-sans) !important;
+            font-size: 0.85rem !important;
+            transition: border-color var(--transition);
         }
 
+        [data-testid="stSidebar"] .stTextInput input:focus,
+        [data-testid="stSidebar"] .stDateInput input:focus {
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 0 1px var(--accent-muted) !important;
+        }
+
+        [data-testid="stSidebar"] div[data-baseweb="tag"] {
+            background: var(--accent-subtle) !important;
+            border: 1px solid var(--accent-muted) !important;
+            border-radius: 4px !important;
+        }
+
+        [data-testid="stSidebar"] div[data-baseweb="tag"] span {
+            color: var(--text-primary) !important;
+            font-size: 0.78rem !important;
+        }
+
+        /* ── Typography ───────────────────────────────────────── */
         h1, h2, h3, h4 {
-            color: var(--text-main) !important;
-            letter-spacing: 0.02em;
+            font-family: var(--font-sans) !important;
+            color: var(--text-primary) !important;
+            font-weight: 600 !important;
+            letter-spacing: -0.02em;
         }
 
-        .hero {
-            background: linear-gradient(
-                120deg,
-                rgba(17, 27, 46, 0.92) 0%,
-                rgba(14, 22, 37, 0.94) 48%,
-                rgba(18, 36, 55, 0.90) 100%
-            );
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 1.2rem 1.35rem;
-            box-shadow: var(--shadow);
-            margin-bottom: 0.85rem;
+        /* ── Scrollbar ────────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-base); }
+        ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* ── Hero / Command Header ────────────────────────────── */
+        .cmd-header {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem 1.75rem;
+            margin-bottom: 1.25rem;
+            position: relative;
+            overflow: hidden;
         }
 
-        .hero-title {
-            font-size: 1.8rem;
+        .cmd-header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), transparent 70%);
+        }
+
+        .cmd-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .cmd-header-left {
+            flex: 1;
+        }
+
+        .cmd-title {
+            font-family: var(--font-sans);
+            font-size: 1.5rem;
             font-weight: 700;
-            color: #f2f6fc;
-            margin-bottom: 0.3rem;
+            color: var(--text-primary);
+            letter-spacing: -0.03em;
+            margin: 0 0 0.35rem 0;
+            line-height: 1.2;
         }
 
-        .hero-subtitle {
-            color: #bcd0e7;
-            font-size: 1rem;
-            margin-bottom: 0.45rem;
+        .cmd-title-accent {
+            color: var(--accent);
         }
 
-        .hero-note {
-            color: #8fabc9;
-            font-size: 0.88rem;
+        .cmd-subtitle {
+            font-family: var(--font-sans);
+            font-size: 0.85rem;
+            color: var(--text-tertiary);
+            line-height: 1.5;
+            max-width: 600px;
         }
 
+        .cmd-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            padding: 0.4rem 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .cmd-status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 6px rgba(34,197,94,0.4);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .cmd-status-text {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        /* ── Section Headers ──────────────────────────────────── */
         .section-header {
-            margin-top: 0.7rem;
-            margin-bottom: 0.55rem;
-            padding-left: 0.1rem;
+            margin: 1.5rem 0 0.75rem 0;
+            padding: 0;
         }
 
         .section-title {
-            font-size: 1.2rem;
-            font-weight: 650;
-            color: #eaf1fa;
-            margin-bottom: 0.15rem;
+            font-family: var(--font-sans);
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+            margin: 0 0 0.2rem 0;
         }
 
         .section-subtitle {
-            color: var(--text-muted);
-            font-size: 0.9rem;
+            font-family: var(--font-sans);
+            font-size: 0.78rem;
+            color: var(--text-tertiary);
+            line-height: 1.5;
         }
 
+        /* ── KPI Metric Cards ─────────────────────────────────── */
         .kpi-card {
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            background: linear-gradient(165deg, rgba(18, 30, 49, 0.96), rgba(13, 22, 38, 0.95));
-            padding: 0.9rem 0.95rem 1rem 0.95rem;
-            box-shadow: var(--shadow);
-            min-height: 118px;
-            transition: transform 0.18s ease, border-color 0.18s ease;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1rem 1.1rem;
+            min-height: 110px;
+            transition: border-color var(--transition), transform var(--transition);
+            position: relative;
+            overflow: hidden;
         }
 
         .kpi-card:hover {
-            transform: translateY(-2px);
-            border-color: #35537a;
+            border-color: var(--border-default);
+            transform: translateY(-1px);
         }
 
-        .kpi-chip {
+        .kpi-card--danger {
+            border-left: 2px solid var(--accent);
+        }
+
+        .kpi-card--danger .kpi-value {
+            color: var(--accent-hover);
+        }
+
+        .kpi-tag {
             display: inline-block;
-            border: 1px solid #2f4666;
-            border-radius: 999px;
-            color: #9cc0e7;
-            font-size: 0.7rem;
-            letter-spacing: 0.06em;
-            padding: 0.16rem 0.45rem;
-            margin-bottom: 0.48rem;
+            font-family: var(--font-mono);
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
+            color: var(--text-tertiary);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-default);
+            border-radius: 3px;
+            padding: 0.15rem 0.4rem;
+            margin-bottom: 0.65rem;
         }
 
         .kpi-label {
-            color: #a8bfd8;
-            font-size: 0.82rem;
-            margin-bottom: 0.15rem;
+            font-family: var(--font-sans);
+            font-size: 0.78rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
         }
 
         .kpi-value {
-            color: #f2f6fc;
-            font-size: 1.95rem;
-            line-height: 1.12;
-            font-weight: 720;
-            letter-spacing: 0.02em;
+            font-family: var(--font-mono);
+            font-size: 1.85rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.1;
+            letter-spacing: -0.02em;
         }
 
-        .panel {
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            background: linear-gradient(180deg, rgba(16, 26, 43, 0.94), rgba(14, 22, 36, 0.94));
-            padding: 0.8rem 0.95rem;
-            box-shadow: var(--shadow);
-        }
-
+        /* ── Briefing Panel ───────────────────────────────────── */
         .briefing-panel {
-            border: 1px solid #2d466a;
-            border-radius: 14px;
-            padding: 0.95rem 1rem;
-            background: linear-gradient(145deg, rgba(17, 27, 46, 0.95), rgba(14, 20, 33, 0.98));
-            box-shadow: var(--shadow);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1.1rem 1.25rem;
+            position: relative;
         }
 
-        .briefing-title {
-            color: #eff5ff;
-            font-size: 1rem;
-            margin-bottom: 0.45rem;
-            font-weight: 650;
+        .briefing-panel::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 2px;
+            background: var(--accent);
+            border-radius: var(--radius-md) 0 0 var(--radius-md);
         }
 
-        .briefing-item {
-            color: #b8cde5;
-            margin-bottom: 0.25rem;
-            font-size: 0.92rem;
-        }
-
-        .badge {
-            display: inline-block;
-            border: 1px solid #355074;
-            border-radius: 999px;
-            padding: 0.12rem 0.52rem;
-            margin-right: 0.25rem;
-            margin-bottom: 0.35rem;
-            color: #bcd4ef;
-            font-size: 0.73rem;
-            letter-spacing: 0.02em;
-        }
-
-        .priority-card {
-            border: 1px solid #284367;
-            border-radius: 12px;
-            background: linear-gradient(155deg, rgba(18, 31, 52, 0.97), rgba(12, 21, 35, 0.98));
-            padding: 0.9rem 0.95rem;
-            margin-bottom: 0.7rem;
-            box-shadow: var(--shadow);
-        }
-
-        .priority-rank {
-            color: #67d5ff;
-            font-size: 0.76rem;
+        .briefing-label {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
             text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 0.65rem;
+        }
+
+        .briefing-row {
+            display: flex;
+            align-items: baseline;
+            padding: 0.35rem 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .briefing-row:last-child {
+            border-bottom: none;
+        }
+
+        .briefing-key {
+            font-family: var(--font-sans);
+            font-size: 0.82rem;
+            color: var(--text-tertiary);
+            min-width: 180px;
+            flex-shrink: 0;
+        }
+
+        .briefing-val {
+            font-family: var(--font-sans);
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .briefing-val--danger {
+            color: var(--accent-hover);
+            font-weight: 600;
+        }
+
+        /* ── Priority Article Cards ───────────────────────────── */
+        .pri-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1rem 1.1rem;
+            margin-bottom: 0.65rem;
+            transition: border-color var(--transition), transform var(--transition);
+            position: relative;
+        }
+
+        .pri-card:hover {
+            border-color: var(--border-default);
+            transform: translateY(-1px);
+        }
+
+        .pri-card--high {
+            border-left: 2px solid var(--accent);
+        }
+
+        .pri-card--medium {
+            border-left: 2px solid var(--warning);
+        }
+
+        .pri-card--low {
+            border-left: 2px solid var(--success);
+        }
+
+        .pri-rank {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 600;
             letter-spacing: 0.06em;
-            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 0.4rem;
         }
 
-        .priority-title {
-            color: #f0f6ff;
-            font-size: 1rem;
-            font-weight: 640;
-            margin-bottom: 0.35rem;
+        .pri-rank-num {
+            color: var(--accent);
         }
 
-        .priority-meta {
-            color: #adc4df;
+        .pri-score {
+            color: var(--text-tertiary);
+            margin-left: 0.5rem;
+        }
+
+        .pri-title {
+            font-family: var(--font-sans);
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.35;
+            margin-bottom: 0.4rem;
+        }
+
+        .pri-meta {
+            font-family: var(--font-sans);
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+            margin-bottom: 0.4rem;
+        }
+
+        .pri-meta-sep {
+            color: var(--text-muted);
+            margin: 0 0.35rem;
+        }
+
+        .pri-reason {
+            font-family: var(--font-sans);
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+            font-style: italic;
+            margin-bottom: 0.4rem;
+        }
+
+        .pri-body {
+            font-family: var(--font-sans);
             font-size: 0.82rem;
-            margin-bottom: 0.38rem;
-        }
-
-        .priority-reason {
-            color: #8fdbca;
-            font-size: 0.82rem;
-            margin-bottom: 0.35rem;
-        }
-
-        .priority-preview {
-            color: #c4d6eb;
-            font-size: 0.88rem;
-            line-height: 1.42;
-            margin-bottom: 0.35rem;
-        }
-
-        .article-card {
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            background: linear-gradient(160deg, rgba(16, 27, 45, 0.96), rgba(12, 20, 34, 0.96));
-            padding: 0.85rem 0.9rem;
-            margin-bottom: 0.55rem;
-        }
-
-        .article-title {
-            font-size: 1rem;
-            color: #ecf3fd;
-            font-weight: 620;
-            margin-bottom: 0.35rem;
-        }
-
-        .article-meta {
-            color: #a7bfd9;
-            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
             margin-bottom: 0.45rem;
         }
 
-        .article-preview {
-            color: #c0d3ea;
+        .pri-keywords {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-tertiary);
+            margin-bottom: 0.35rem;
+        }
+
+        .pri-link a {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            color: var(--accent) !important;
+            text-decoration: none !important;
+            letter-spacing: 0.02em;
+            transition: color var(--transition);
+        }
+
+        .pri-link a:hover {
+            color: var(--accent-hover) !important;
+        }
+
+        /* ── Badges / Tags ────────────────────────────────────── */
+        .tag {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            padding: 0.18rem 0.5rem;
+            border-radius: 3px;
+            margin-right: 0.3rem;
+            margin-bottom: 0.3rem;
+            text-transform: uppercase;
+        }
+
+        .tag--topic {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+        }
+
+        .tag--high {
+            background: rgba(220,38,38,0.15);
+            border: 1px solid rgba(220,38,38,0.3);
+            color: #FCA5A5;
+        }
+
+        .tag--medium {
+            background: rgba(245,158,11,0.12);
+            border: 1px solid rgba(245,158,11,0.25);
+            color: #FCD34D;
+        }
+
+        .tag--low {
+            background: rgba(34,197,94,0.12);
+            border: 1px solid rgba(34,197,94,0.25);
+            color: #86EFAC;
+        }
+
+        .tag--unknown {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-default);
+            color: var(--text-tertiary);
+        }
+
+        /* ── Chart Panels ─────────────────────────────────────── */
+        .chart-panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 0.5rem 0.6rem 0.25rem 0.6rem;
+        }
+
+        /* ── Article Cards (Explorer) ─────────────────────────── */
+        .art-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 0.85rem 1rem;
+            margin-bottom: 0.5rem;
+            transition: border-color var(--transition);
+        }
+
+        .art-card:hover {
+            border-color: var(--border-default);
+        }
+
+        .art-title {
+            font-family: var(--font-sans);
             font-size: 0.88rem;
-            line-height: 1.42;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.3rem;
         }
 
-        .article-link a {
-            color: #75d0ff !important;
-            text-decoration: none;
+        .art-meta {
+            font-family: var(--font-sans);
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+            margin-bottom: 0.25rem;
         }
 
-        .article-link a:hover {
-            text-decoration: underline;
+        .art-preview {
+            font-family: var(--font-sans);
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
         }
 
+        /* ── Data Table Override ───────────────────────────────── */
         [data-testid="stDataFrame"] {
-            border: 1px solid var(--border);
-            border-radius: 12px;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: var(--radius-md) !important;
             overflow: hidden;
-            box-shadow: var(--shadow);
         }
 
+        /* ── Expander Override ─────────────────────────────────── */
         [data-testid="stExpander"] {
-            border: 1px solid #2a3e5f !important;
-            border-radius: 12px !important;
-            background: rgba(17, 27, 45, 0.68);
+            background: var(--bg-surface) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: var(--radius-md) !important;
         }
 
         [data-testid="stExpander"] summary p {
-            color: #e4edf8 !important;
-            font-weight: 560;
+            color: var(--text-primary) !important;
+            font-family: var(--font-sans) !important;
+            font-weight: 500;
+            font-size: 0.85rem;
         }
 
-        .chart-wrap {
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 0.35rem 0.45rem 0.15rem 0.45rem;
-            background: linear-gradient(180deg, rgba(15, 24, 40, 0.96), rgba(12, 20, 34, 0.98));
-            box-shadow: var(--shadow);
-        }
-
-        hr {
+        /* ── Divider ──────────────────────────────────────────── */
+        .divider {
+            height: 1px;
+            background: var(--border-subtle);
+            margin: 1.25rem 0;
             border: none;
-            border-top: 1px solid #223550;
-            margin-top: 0.85rem;
-            margin-bottom: 0.85rem;
         }
+
+        /* ── Metric Override ──────────────────────────────────── */
+        [data-testid="stMetric"] {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 0.75rem 0.85rem;
+        }
+
+        [data-testid="stMetric"] label {
+            color: var(--text-tertiary) !important;
+            font-size: 0.75rem !important;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        [data-testid="stMetric"] [data-testid="stMetricValue"] {
+            font-family: var(--font-mono) !important;
+            color: var(--text-primary) !important;
+        }
+
+        /* ── Sidebar Filter Title ─────────────────────────────── */
+        .sidebar-brand {
+            font-family: var(--font-sans);
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+            margin-bottom: 0.15rem;
+        }
+
+        .sidebar-brand-accent {
+            color: var(--accent);
+        }
+
+        .sidebar-tagline {
+            font-family: var(--font-mono);
+            font-size: 0.62rem;
+            color: var(--text-muted);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 1.25rem;
+        }
+
+        .sidebar-divider {
+            height: 1px;
+            background: var(--border-subtle);
+            margin: 0.85rem 0;
+        }
+
+        .sidebar-section-label {
+            font-family: var(--font-mono);
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        /* ── Info/Warning Box Override ─────────────────────────── */
+        [data-testid="stAlert"] {
+            background: var(--bg-surface) !important;
+            border: 1px solid var(--border-default) !important;
+            border-radius: var(--radius-md) !important;
+        }
+
+        /* ── Select Box Override ───────────────────────────────── */
+        div[data-baseweb="select"] > div {
+            background: var(--bg-elevated) !important;
+            border: 1px solid var(--border-default) !important;
+            border-radius: var(--radius-sm) !important;
+        }
+
+        div[data-baseweb="popover"] > div {
+            background: var(--bg-elevated) !important;
+            border: 1px solid var(--border-default) !important;
+        }
+
+        /* ── Hide Streamlit branding ──────────────────────────── */
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
+        header[data-testid="stHeader"] { display: none; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
+# ---------------------------------------------------------------------------
+#  Data Helpers (preserved logic)
+# ---------------------------------------------------------------------------
+
 def parse_keyword_matches(value: object) -> dict:
-    """Normalize keyword_matches field into a dictionary."""
     if isinstance(value, dict):
         return value
     if isinstance(value, str) and value.strip():
@@ -360,37 +738,22 @@ def parse_keyword_matches(value: object) -> dict:
 
 
 def flatten_keyword_matches(payload: dict, limit: int = 8) -> str:
-    """Flatten nested keyword match payload for readable UI output."""
     if not payload:
-        return "No keyword evidence captured"
-
+        return "None captured"
     collected: list[str] = []
-
-    topic_matches = payload.get("topic_matches", {})
-    if isinstance(topic_matches, dict):
-        for values in topic_matches.values():
-            if isinstance(values, list):
-                collected.extend([str(v) for v in values if v])
-
-    escalation_matches = payload.get("escalation_matches", {})
-    if isinstance(escalation_matches, dict):
-        for values in escalation_matches.values():
-            if isinstance(values, list):
-                collected.extend([str(v) for v in values if v])
-
-    deduped = []
-    seen: set[str] = set()
-    for keyword in collected:
-        if keyword not in seen:
-            deduped.append(keyword)
-            seen.add(keyword)
+    for key in ("topic_matches", "escalation_matches"):
+        block = payload.get(key, {})
+        if isinstance(block, dict):
+            for values in block.values():
+                if isinstance(values, list):
+                    collected.extend([str(v) for v in values if v])
+    deduped = list(dict.fromkeys(collected))
     if not deduped:
-        return "No keyword evidence captured"
+        return "None captured"
     return ", ".join(deduped[:limit])
 
 
 def keyword_match_count(payload: dict) -> int:
-    """Count matched keywords from payload."""
     if not payload:
         return 0
     count = 0
@@ -403,9 +766,12 @@ def keyword_match_count(payload: dict) -> int:
     return count
 
 
+# ---------------------------------------------------------------------------
+#  Data Loading
+# ---------------------------------------------------------------------------
+
 @st.cache_data(ttl=300)
 def load_article_dataframe() -> pd.DataFrame:
-    """Load joined raw+processed records for dashboard rendering."""
     query = text(
         """
         SELECT
@@ -436,21 +802,10 @@ def load_article_dataframe() -> pd.DataFrame:
         logger.exception("Failed to query article data: %s", exc)
         return pd.DataFrame(
             columns=[
-                "raw_article_id",
-                "source",
-                "title",
-                "body",
-                "author",
-                "url",
-                "source_section",
-                "collected_at",
-                "published_date",
-                "processed_article_id",
-                "topic",
-                "sentiment_or_escalation",
-                "country_guess",
-                "keyword_matches",
-                "processed_at",
+                "raw_article_id", "source", "title", "body", "author", "url",
+                "source_section", "collected_at", "published_date",
+                "processed_article_id", "topic", "sentiment_or_escalation",
+                "country_guess", "keyword_matches", "processed_at",
             ]
         )
 
@@ -468,17 +823,73 @@ def load_article_dataframe() -> pd.DataFrame:
     return df
 
 
+# ---------------------------------------------------------------------------
+#  Chart Styling
+# ---------------------------------------------------------------------------
+
+def style_figure(fig, title: str = "") -> None:
+    """Apply premium dark theme to Plotly figures."""
+    fig.update_layout(
+        title=dict(
+            text=title,
+            font=dict(family="Inter, sans-serif", size=14, color="#A3A3A3"),
+            x=0.02,
+            y=0.97,
+        ) if title else None,
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif", color="#737373", size=11),
+        margin=dict(l=12, r=12, t=40 if title else 12, b=12),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+            font=dict(color="#737373", size=10, family="Inter, sans-serif"),
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+        ),
+        xaxis=dict(
+            gridcolor="rgba(38,38,38,0.6)",
+            zerolinecolor="rgba(38,38,38,0.6)",
+            tickfont=dict(size=10, color="#525252"),
+        ),
+        yaxis=dict(
+            gridcolor="rgba(38,38,38,0.6)",
+            zerolinecolor="rgba(38,38,38,0.6)",
+            tickfont=dict(size=10, color="#525252"),
+        ),
+        hoverlabel=dict(
+            bgcolor="#171717",
+            bordercolor="#262626",
+            font=dict(color="#F5F5F5", size=12, family="Inter, sans-serif"),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+#  UI Components
+# ---------------------------------------------------------------------------
+
 def render_header() -> None:
-    """Render top hero/banner section."""
     st.markdown(
         """
-        <div class="hero">
-          <div class="hero-title">Arabic Geopolitical OSINT Console</div>
-          <div class="hero-subtitle">
-            Live monitoring of Arabic-language news sources, classified by topic and escalation risk.
-          </div>
-          <div class="hero-note">
-            Focus: geopolitical developments, escalation signals, source activity, and country-level trend intelligence.
+        <div class="cmd-header">
+          <div class="cmd-header-row">
+            <div class="cmd-header-left">
+              <div class="cmd-title">
+                OSINT <span class="cmd-title-accent">Intelligence</span> Console
+              </div>
+              <div class="cmd-subtitle">
+                Real-time monitoring of Arabic-language news sources. Classified by topic, escalation risk, and geographic signal.
+              </div>
+            </div>
+            <div class="cmd-status">
+              <div class="cmd-status-dot"></div>
+              <span class="cmd-status-text">System Active</span>
+            </div>
           </div>
         </div>
         """,
@@ -487,7 +898,6 @@ def render_header() -> None:
 
 
 def render_section_header(title: str, subtitle: str) -> None:
-    """Render consistent section heading."""
     st.markdown(
         f"""
         <div class="section-header">
@@ -499,37 +909,57 @@ def render_section_header(title: str, subtitle: str) -> None:
     )
 
 
+def _escalation_tag(level: str) -> str:
+    """Return an HTML tag for escalation level."""
+    lvl = level.lower()
+    cls = f"tag--{lvl}" if lvl in ("high", "medium", "low") else "tag--unknown"
+    return f'<span class="tag {cls}">{escape(level)}</span>'
+
+
+def _topic_tag(topic: str) -> str:
+    return f'<span class="tag tag--topic">{escape(topic)}</span>'
+
+
+# ---------------------------------------------------------------------------
+#  Sidebar Filters
+# ---------------------------------------------------------------------------
+
 def apply_sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
-    """Render and apply sidebar filter controls."""
     if df.empty:
         return df
 
     with st.sidebar:
-        st.markdown("### Filter Controls")
         st.markdown(
-            "<span style='color:#9cb0c7;'>Refine by source, classification, geography, and timeframe.</span>",
+            '<div class="sidebar-brand">OSINT <span class="sidebar-brand-accent">Console</span></div>'
+            '<div class="sidebar-tagline">Intelligence Filters</div>',
             unsafe_allow_html=True,
         )
 
+        st.markdown('<div class="sidebar-section-label">Sources</div>', unsafe_allow_html=True)
         sources = sorted(df["source"].dropna().unique().tolist())
-        topics = sorted(df["topic"].dropna().unique().tolist())
-        escalations = sorted(df["sentiment_or_escalation"].dropna().unique().tolist())
-        countries = sorted(df["country_guess"].dropna().unique().tolist())
-        sections = sorted(df["source_section"].dropna().unique().tolist())
+        selected_sources = st.multiselect("Source", sources, default=sources, label_visibility="collapsed")
 
-        selected_sources = st.multiselect("Source", sources, default=sources)
-        selected_topics = st.multiselect("Topic", topics, default=topics)
-        selected_escalations = st.multiselect(
-            "Escalation",
-            escalations,
-            default=escalations,
-        )
-        selected_countries = st.multiselect("Country", countries, default=countries)
+        st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-section-label">Classification</div>', unsafe_allow_html=True)
+        topics = sorted(df["topic"].dropna().unique().tolist())
+        selected_topics = st.multiselect("Topic", topics, default=topics, label_visibility="collapsed")
+
+        escalations = sorted(df["sentiment_or_escalation"].dropna().unique().tolist())
+        selected_escalations = st.multiselect("Escalation", escalations, default=escalations, label_visibility="collapsed")
+
+        st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-section-label">Geography</div>', unsafe_allow_html=True)
+        countries = sorted(df["country_guess"].dropna().unique().tolist())
+        selected_countries = st.multiselect("Country", countries, default=countries, label_visibility="collapsed")
+
+        sections = sorted(df["source_section"].dropna().unique().tolist())
         if sections:
-            selected_sections = st.multiselect("Section", sections, default=sections)
+            selected_sections = st.multiselect("Section", sections, default=sections, label_visibility="collapsed")
         else:
             selected_sections = []
 
+        st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-section-label">Timeframe</div>', unsafe_allow_html=True)
         min_date = (
             df["analysis_date"].dt.date.min()
             if df["analysis_date"].notna().any()
@@ -545,8 +975,12 @@ def apply_sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
             value=(min_date, max_date),
             min_value=min_date,
             max_value=max_date,
+            label_visibility="collapsed",
         )
-        keyword = st.text_input("Keyword Search")
+
+        st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-section-label">Search</div>', unsafe_allow_html=True)
+        keyword = st.text_input("Keyword", placeholder="Search articles...", label_visibility="collapsed")
 
     filtered = df.copy()
     filtered = filtered[filtered["source"].isin(selected_sources)]
@@ -571,37 +1005,36 @@ def apply_sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
                 filtered["title"].fillna("").str.contains(pattern, case=False, regex=False)
                 | filtered["body"].fillna("").str.contains(pattern, case=False, regex=False)
                 | filtered["source"].fillna("").str.contains(pattern, case=False, regex=False)
-                | filtered["country_guess"].fillna("").str.contains(
-                    pattern, case=False, regex=False
-                )
+                | filtered["country_guess"].fillna("").str.contains(pattern, case=False, regex=False)
             ]
 
     return filtered.sort_values("analysis_date", ascending=False)
 
 
+# ---------------------------------------------------------------------------
+#  KPI Row
+# ---------------------------------------------------------------------------
+
 def render_kpi_row(filtered_df: pd.DataFrame) -> None:
-    """Render premium KPI cards."""
     raw_count = int(filtered_df["raw_article_id"].nunique())
     processed_count = int(filtered_df["processed_article_id"].dropna().nunique())
     source_count = int(filtered_df["source"].nunique())
-    high_escalation_count = int(
-        (filtered_df["sentiment_or_escalation"].str.lower() == "high").sum()
-    )
+    high_count = int((filtered_df["sentiment_or_escalation"].str.lower() == "high").sum())
 
     kpis = [
-        ("Raw", "Total Raw Articles", raw_count),
-        ("Proc", "Total Processed Articles", processed_count),
-        ("Src", "Active Sources", source_count),
-        ("Risk", "High-Escalation Articles", high_escalation_count),
+        ("INGEST", "Total Articles", raw_count, ""),
+        ("PROC", "Processed", processed_count, ""),
+        ("SRC", "Active Sources", source_count, ""),
+        ("ALERT", "High Escalation", high_count, " kpi-card--danger"),
     ]
 
     cols = st.columns(4)
-    for col, (chip, label, value) in zip(cols, kpis):
+    for col, (tag, label, value, extra_cls) in zip(cols, kpis):
         with col:
             st.markdown(
                 f"""
-                <div class="kpi-card">
-                  <div class="kpi-chip">{chip}</div>
+                <div class="kpi-card{extra_cls}">
+                  <div class="kpi-tag">{tag}</div>
                   <div class="kpi-label">{label}</div>
                   <div class="kpi-value">{value:,}</div>
                 </div>
@@ -610,45 +1043,22 @@ def render_kpi_row(filtered_df: pd.DataFrame) -> None:
             )
 
 
-def style_figure(fig, title: str) -> None:
-    """Apply a consistent dark look across Plotly figures."""
-    fig.update_layout(
-        title=title,
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#d6e4f4"),
-        title_font=dict(size=17, color="#eef5ff"),
-        margin=dict(l=14, r=14, t=52, b=14),
-        legend=dict(
-            bgcolor="rgba(12,20,34,0.45)",
-            bordercolor="#294264",
-            borderwidth=1,
-            font=dict(color="#c7daef", size=11),
-        ),
-        xaxis=dict(gridcolor="rgba(83,109,141,0.25)", zerolinecolor="rgba(83,109,141,0.25)"),
-        yaxis=dict(gridcolor="rgba(83,109,141,0.25)", zerolinecolor="rgba(83,109,141,0.25)"),
-    )
-
+# ---------------------------------------------------------------------------
+#  Intelligence Briefing
+# ---------------------------------------------------------------------------
 
 def generate_intelligence_briefing(filtered_df: pd.DataFrame) -> dict[str, object]:
-    """Build top-line intelligence briefing values from filtered data."""
     if filtered_df.empty:
         return {
-            "top_topic": "N/A",
-            "top_country": "N/A",
-            "high_escalation_count": 0,
-            "most_active_source": "N/A",
-            "new_articles_24h": 0,
-            "window_anchor": "N/A",
+            "top_topic": "N/A", "top_country": "N/A",
+            "high_escalation_count": 0, "most_active_source": "N/A",
+            "new_articles_24h": 0, "window_anchor": "N/A",
         }
 
     top_topic = filtered_df["topic"].value_counts().idxmax()
     country_series = filtered_df["country_guess"].replace("Unknown", pd.NA).dropna()
     top_country = country_series.value_counts().idxmax() if not country_series.empty else "N/A"
-    high_escalation_count = int(
-        (filtered_df["sentiment_or_escalation"].str.lower() == "high").sum()
-    )
+    high_escalation_count = int((filtered_df["sentiment_or_escalation"].str.lower() == "high").sum())
     most_active_source = filtered_df["source"].value_counts().idxmax()
 
     newest_ts = filtered_df["analysis_date"].max()
@@ -670,35 +1080,58 @@ def generate_intelligence_briefing(filtered_df: pd.DataFrame) -> dict[str, objec
     }
 
 
-def render_intelligence_briefing_top(filtered_df: pd.DataFrame) -> None:
-    """Render high-signal briefing near top of dashboard."""
+def render_intelligence_briefing(filtered_df: pd.DataFrame) -> None:
     render_section_header(
         "Intelligence Briefing",
-        "Immediate answers: what dominates, who is most active, and where escalation pressure is rising.",
+        "Dominant signals across the current filter context.",
     )
 
     if filtered_df.empty:
-        st.info("No records available to generate a briefing for the selected filters.")
+        st.info("No records available for the selected filters.")
         return
 
-    briefing = generate_intelligence_briefing(filtered_df)
+    b = generate_intelligence_briefing(filtered_df)
+    danger_cls = ' briefing-val--danger' if b['high_escalation_count'] > 0 else ''
+
     st.markdown(
         f"""
         <div class="briefing-panel">
-          <div class="briefing-title">Analyst Snapshot</div>
-          <div class="briefing-item">Top topic in selected range: <strong>{escape(str(briefing['top_topic']))}</strong>.</div>
-          <div class="briefing-item">Top country in selected range: <strong>{escape(str(briefing['top_country']))}</strong>.</div>
-          <div class="briefing-item">High-escalation article count: <strong>{briefing['high_escalation_count']}</strong>.</div>
-          <div class="briefing-item">Most active source: <strong>{escape(str(briefing['most_active_source']))}</strong>.</div>
-          <div class="briefing-item">New articles in most recent 24h window: <strong>{briefing['new_articles_24h']}</strong> (anchor: {escape(str(briefing['window_anchor']))}).</div>
+          <div class="briefing-label">Analyst Snapshot</div>
+          <div class="briefing-row">
+            <span class="briefing-key">Dominant Topic</span>
+            <span class="briefing-val">{escape(str(b['top_topic']))}</span>
+          </div>
+          <div class="briefing-row">
+            <span class="briefing-key">Top Country</span>
+            <span class="briefing-val">{escape(str(b['top_country']))}</span>
+          </div>
+          <div class="briefing-row">
+            <span class="briefing-key">High Escalation Count</span>
+            <span class="briefing-val{danger_cls}">{b['high_escalation_count']}</span>
+          </div>
+          <div class="briefing-row">
+            <span class="briefing-key">Most Active Source</span>
+            <span class="briefing-val">{escape(str(b['most_active_source']))}</span>
+          </div>
+          <div class="briefing-row">
+            <span class="briefing-key">New (24h Window)</span>
+            <span class="briefing-val">{b['new_articles_24h']}</span>
+          </div>
+          <div class="briefing-row">
+            <span class="briefing-key">Window Anchor</span>
+            <span class="briefing-val" style="font-family:var(--font-mono);font-size:0.78rem;">{escape(str(b['window_anchor']))}</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
+# ---------------------------------------------------------------------------
+#  Priority Articles
+# ---------------------------------------------------------------------------
+
 def compute_priority_scores(df: pd.DataFrame) -> pd.DataFrame:
-    """Score articles so analysts see most important items first."""
     if df.empty:
         return df
 
@@ -715,55 +1148,42 @@ def compute_priority_scores(df: pd.DataFrame) -> pd.DataFrame:
         ESCALATION_WEIGHT
     ).fillna(0.0) * 4.0
     ranked["topic_component"] = ranked["topic"].map(TOPIC_WEIGHT).fillna(1.0) * 2.0
-
     ranked["keyword_match_count"] = ranked["keyword_matches"].apply(keyword_match_count)
     ranked["keyword_component"] = ranked["keyword_match_count"].clip(upper=8) * 0.2
-
     ranked["priority_score"] = (
         ranked["escalation_component"]
         + ranked["topic_component"]
         + ranked["recency_component"]
         + ranked["keyword_component"]
     ).round(2)
-
     ranked["priority_reason"] = ranked.apply(build_priority_reason, axis=1)
-    return ranked.sort_values(
-        ["priority_score", "analysis_date"], ascending=[False, False]
-    )
+    return ranked.sort_values(["priority_score", "analysis_date"], ascending=[False, False])
 
 
 def build_priority_reason(row: pd.Series) -> str:
-    """Generate analyst-friendly explanation for article priority score."""
     reasons: list[str] = []
-
     escalation = str(row.get("sentiment_or_escalation", "unknown")).lower()
     if escalation == "high":
         reasons.append("high escalation signal")
     elif escalation == "medium":
         reasons.append("medium escalation signal")
-
     topic = str(row.get("topic", "Uncategorized"))
     if topic in {"Military", "Politics"}:
         reasons.append("strategic topic")
-
     recency = float(row.get("recency_component", 0))
     if recency >= 2.0:
-        reasons.append("very recent publication")
-
+        reasons.append("very recent")
     if int(row.get("keyword_match_count", 0)) >= 3:
-        reasons.append("multiple matched indicators")
-
+        reasons.append("multiple indicators")
     if not reasons:
-        reasons.append("contextual monitoring relevance")
-
+        reasons.append("contextual relevance")
     return "; ".join(reasons)
 
 
 def render_priority_articles(filtered_df: pd.DataFrame, top_n: int = 8) -> None:
-    """Render highest-priority articles first with explainability cues."""
     render_section_header(
-        "Priority Articles",
-        "Ranked by escalation, recency, strategic topic weighting, and matched indicator density.",
+        "Priority Intelligence",
+        "Ranked by escalation severity, recency, strategic topic weight, and indicator density.",
     )
 
     if filtered_df.empty:
@@ -779,47 +1199,56 @@ def render_priority_articles(filtered_df: pd.DataFrame, top_n: int = 8) -> None:
     for idx, (_, row) in enumerate(ranked.iterrows(), start=1):
         col = cols[(idx - 1) % 2]
         with col:
-            title = escape(safe_truncate(str(row.get("title", "N/A")), 115))
+            title = escape(safe_truncate(str(row.get("title", "N/A")), 110))
             source = escape(str(row.get("source", "N/A")))
-            topic = escape(str(row.get("topic", "Uncategorized")))
-            escalation = escape(str(row.get("sentiment_or_escalation", "unknown")))
+            topic = str(row.get("topic", "Uncategorized"))
+            escalation = str(row.get("sentiment_or_escalation", "unknown"))
             country = escape(str(row.get("country_guess", "Unknown")))
             published = pd.to_datetime(row.get("analysis_date"), errors="coerce")
-            published_label = (
-                published.strftime("%Y-%m-%d %H:%M UTC") if pd.notna(published) else "N/A"
-            )
+            pub_label = published.strftime("%Y-%m-%d %H:%M UTC") if pd.notna(published) else "N/A"
             reason = escape(str(row.get("priority_reason", "contextual relevance")))
-            preview = escape(safe_truncate(str(row.get("body", "")), 260))
+            preview = escape(safe_truncate(str(row.get("body", "")), 220))
             url = escape(str(row.get("url", "#")))
-            matched_keywords = escape(flatten_keyword_matches(row.get("keyword_matches", {})))
+            matched_kw = escape(flatten_keyword_matches(row.get("keyword_matches", {})))
+            score = row.get("priority_score", 0)
+
+            esc_lower = escalation.lower()
+            card_cls = f"pri-card--{esc_lower}" if esc_lower in ("high", "medium", "low") else ""
 
             st.markdown(
                 f"""
-                <div class="priority-card">
-                  <div class="priority-rank">Priority Rank #{idx} | Score {row.get('priority_score', 0):.2f}</div>
-                  <div class="priority-title">{title}</div>
-                  <div class="priority-meta">{source} | {published_label} | {country}</div>
-                  <span class="badge">{topic}</span>
-                  <span class="badge">{escalation}</span>
-                  <div class="priority-reason">Why this ranks high: {reason}</div>
-                  <div class="priority-preview">{preview}</div>
-                  <div class="priority-meta">Matched keywords: {matched_keywords}</div>
-                  <div class="article-link"><a href="{url}" target="_blank">Open source article</a></div>
+                <div class="pri-card {card_cls}">
+                  <div class="pri-rank">
+                    <span class="pri-rank-num">#{idx}</span>
+                    <span class="pri-score">Score {score:.1f}</span>
+                  </div>
+                  <div class="pri-title">{title}</div>
+                  <div class="pri-meta">
+                    {source}<span class="pri-meta-sep">/</span>{pub_label}<span class="pri-meta-sep">/</span>{country}
+                  </div>
+                  {_topic_tag(topic)} {_escalation_tag(escalation)}
+                  <div class="pri-reason">{reason}</div>
+                  <div class="pri-body">{preview}</div>
+                  <div class="pri-keywords">Keywords: {matched_kw}</div>
+                  <div class="pri-link"><a href="{url}" target="_blank">View source article &rarr;</a></div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
 
+# ---------------------------------------------------------------------------
+#  Trend Charts
+# ---------------------------------------------------------------------------
+
 def render_trend_section(filtered_df: pd.DataFrame) -> None:
-    """Render trend visualizations including temporal change signals."""
     render_section_header(
         "Trend Monitoring",
-        "Temporal topic shifts, escalation trajectories, source output, and country concentration.",
+        "Temporal topic shifts, escalation trajectories, source output, and geographic concentration.",
     )
 
     if filtered_df.empty:
-        st.info("No records match your current filters. Adjust filters to view trend analytics.")
+        st.info("No records match the current filters.")
         return
 
     topic_time_df = (
@@ -855,71 +1284,71 @@ def render_trend_section(filtered_df: pd.DataFrame) -> None:
         .sort_values("count", ascending=False)
     )
 
+    # Row 1: Topic + Escalation over time
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+        st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
         fig = px.line(
-            topic_time_df,
-            x="day",
-            y="count",
-            color="topic",
+            topic_time_df, x="day", y="count", color="topic",
             markers=True,
-            color_discrete_sequence=px.colors.qualitative.Vivid,
+            color_discrete_sequence=CHART_RED_SCALE,
         )
-        style_figure(fig, "Topic Frequency Over Time")
+        style_figure(fig, "Topic Frequency")
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+        st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
+        esc_color_map = {k: v for k, v in ESCALATION_COLORS.items()}
         fig = px.area(
-            escalation_time_df,
-            x="day",
-            y="count",
+            escalation_time_df, x="day", y="count",
             color="sentiment_or_escalation",
-            color_discrete_sequence=["#fb7185", "#fbbf24", "#4ade80", "#4cc9f0"],
+            color_discrete_map=esc_color_map,
         )
-        style_figure(fig, "Escalation Frequency Over Time")
+        style_figure(fig, "Escalation Trajectory")
+        fig.update_traces(line=dict(width=1.5))
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Row 2: Source + Country
     c3, c4 = st.columns(2)
     with c3:
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+        st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
         fig = px.bar(
-            source_df,
-            x="source",
-            y="count",
-            color="source",
-            color_discrete_sequence=px.colors.qualitative.Bold,
+            source_df, x="source", y="count", color="source",
+            color_discrete_sequence=SOURCE_COLORS,
         )
-        style_figure(fig, "Source Comparison")
+        style_figure(fig, "Source Volume")
         fig.update_layout(showlegend=False)
+        fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
     with c4:
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+        st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
         if country_df.empty:
             placeholder = pd.DataFrame({"country_guess": ["N/A"], "count": [0]})
             fig = px.bar(placeholder, x="country_guess", y="count")
         else:
             fig = px.bar(
-                country_df.head(10),
-                x="country_guess",
-                y="count",
-                color="country_guess",
-                color_discrete_sequence=px.colors.qualitative.Set2,
+                country_df.head(10), x="country_guess", y="count",
+                color="count",
+                color_continuous_scale=[[0, "#262626"], [0.5, "#991B1B"], [1, "#DC2626"]],
             )
-        style_figure(fig, "Top Countries Distribution")
+            fig.update_layout(coloraxis_showscale=False)
+        style_figure(fig, "Country Distribution")
         fig.update_layout(showlegend=False)
+        fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
 
+# ---------------------------------------------------------------------------
+#  Country Analysis
+# ---------------------------------------------------------------------------
+
 def render_country_analysis(filtered_df: pd.DataFrame) -> None:
-    """Render country-focused analysis and deep-dive exploration."""
     render_section_header(
         "Country Analysis",
-        "Country-level concentration, escalation pressure, and deep-dive records by selected country.",
+        "Country-level concentration, escalation pressure, and deep-dive by selected region.",
     )
 
     if filtered_df.empty:
@@ -947,43 +1376,45 @@ def render_country_analysis(filtered_df: pd.DataFrame) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+        st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
         if country_df.empty:
             fig = px.bar(pd.DataFrame({"country_guess": ["N/A"], "article_count": [0]}), x="country_guess", y="article_count")
         else:
             fig = px.bar(
-                country_df.head(10),
-                x="country_guess",
-                y="article_count",
-                color="country_guess",
-                color_discrete_sequence=px.colors.qualitative.Set3,
+                country_df.head(10), x="country_guess", y="article_count",
+                color="article_count",
+                color_continuous_scale=[[0, "#262626"], [0.5, "#525252"], [1, "#A3A3A3"]],
             )
-        style_figure(fig, "Top Countries Mentioned")
+            fig.update_layout(coloraxis_showscale=False)
+        style_figure(fig, "Top Countries")
         fig.update_layout(showlegend=False)
+        fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+        st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
         if high_country_df.empty:
             fig = px.bar(pd.DataFrame({"country_guess": ["N/A"], "high_escalation_count": [0]}), x="country_guess", y="high_escalation_count")
         else:
             fig = px.bar(
-                high_country_df.head(10),
-                x="country_guess",
-                y="high_escalation_count",
-                color="country_guess",
-                color_discrete_sequence=px.colors.qualitative.Pastel,
+                high_country_df.head(10), x="country_guess", y="high_escalation_count",
+                color="high_escalation_count",
+                color_continuous_scale=[[0, "#404040"], [0.5, "#991B1B"], [1, "#DC2626"]],
             )
-        style_figure(fig, "High-Escalation Articles by Country")
+            fig.update_layout(coloraxis_showscale=False)
+        style_figure(fig, "High-Escalation by Country")
         fig.update_layout(showlegend=False)
+        fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Country deep-dive
     focus_options = ["All Countries"] + country_df["country_guess"].tolist()
     selected_country = st.selectbox("Country Deep Dive", options=focus_options, index=0)
 
     scoped = (
-        filtered_df if selected_country == "All Countries" else filtered_df[filtered_df["country_guess"] == selected_country]
+        filtered_df if selected_country == "All Countries"
+        else filtered_df[filtered_df["country_guess"] == selected_country]
     )
 
     stat1, stat2, stat3, stat4 = st.columns(4)
@@ -1002,28 +1433,27 @@ def render_country_analysis(filtered_df: pd.DataFrame) -> None:
     )
 
     country_table = scoped[
-        [
-            "analysis_date",
-            "source",
-            "title",
-            "topic",
-            "sentiment_or_escalation",
-            "country_guess",
-        ]
+        ["analysis_date", "source", "title", "topic", "sentiment_or_escalation", "country_guess"]
     ].copy()
     country_table["analysis_date"] = pd.to_datetime(
         country_table["analysis_date"], errors="coerce"
     ).dt.strftime("%Y-%m-%d %H:%M")
     country_table["title"] = country_table["title"].map(lambda v: safe_truncate(str(v), 100))
-    country_table = country_table.rename(columns={"analysis_date": "Date", "source": "Source", "title": "Title", "topic": "Topic", "sentiment_or_escalation": "Escalation", "country_guess": "Country"})
+    country_table = country_table.rename(columns={
+        "analysis_date": "Date", "source": "Source", "title": "Title",
+        "topic": "Topic", "sentiment_or_escalation": "Escalation", "country_guess": "Country",
+    })
     st.dataframe(country_table.head(20), use_container_width=True, hide_index=True, height=250)
 
 
+# ---------------------------------------------------------------------------
+#  Articles Explorer
+# ---------------------------------------------------------------------------
+
 def render_articles_section(filtered_df: pd.DataFrame) -> None:
-    """Render table + detailed explainability for articles."""
     render_section_header(
-        "Recent Articles Explorer",
-        "Browse latest records with topic, escalation, country, and keyword-match explainability.",
+        "Article Explorer",
+        "Browse records with classification, escalation, and keyword-match detail.",
     )
 
     if filtered_df.empty:
@@ -1031,84 +1461,65 @@ def render_articles_section(filtered_df: pd.DataFrame) -> None:
         return
 
     table_df = filtered_df[
-        [
-            "analysis_date",
-            "source",
-            "topic",
-            "sentiment_or_escalation",
-            "country_guess",
-            "title",
-            "url",
-        ]
+        ["analysis_date", "source", "topic", "sentiment_or_escalation", "country_guess", "title", "url"]
     ].copy()
-    table_df = table_df.rename(
-        columns={
-            "analysis_date": "Date",
-            "source": "Source",
-            "topic": "Topic",
-            "sentiment_or_escalation": "Escalation",
-            "country_guess": "Country",
-            "title": "Title",
-            "url": "URL",
-        }
-    )
-    table_df["Date"] = pd.to_datetime(table_df["Date"], errors="coerce").dt.strftime(
-        "%Y-%m-%d %H:%M"
-    )
+    table_df = table_df.rename(columns={
+        "analysis_date": "Date", "source": "Source", "topic": "Topic",
+        "sentiment_or_escalation": "Escalation", "country_guess": "Country",
+        "title": "Title", "url": "URL",
+    })
+    table_df["Date"] = pd.to_datetime(table_df["Date"], errors="coerce").dt.strftime("%Y-%m-%d %H:%M")
     table_df["Title"] = table_df["Title"].map(lambda x: safe_truncate(str(x), 130))
-
     st.dataframe(table_df.head(80), use_container_width=True, hide_index=True, height=300)
 
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("#### Article Detail Expanders")
+    st.markdown('<div class="section-header"><div class="section-title">Article Detail</div></div>', unsafe_allow_html=True)
     for _, row in filtered_df.head(14).iterrows():
         source = row.get("source", "N/A")
         title = safe_truncate(str(row.get("title", "")), 100)
-        with st.expander(f"[{source}] {title}"):
+        with st.expander(f"{source}  /  {title}"):
             st.markdown(f"**Title:** {row.get('title', 'N/A')}")
             st.markdown(f"**Source:** {source}")
-            st.markdown(f"**Published Date:** {row.get('published_date', row.get('analysis_date', 'N/A'))}")
+            st.markdown(f"**Published:** {row.get('published_date', row.get('analysis_date', 'N/A'))}")
             st.markdown(f"**Topic:** {row.get('topic', 'Uncategorized')}")
             st.markdown(f"**Escalation:** {row.get('sentiment_or_escalation', 'unknown')}")
             st.markdown(f"**Country:** {row.get('country_guess', 'Unknown')}")
-            st.markdown(f"**Matched Keywords:** {flatten_keyword_matches(row.get('keyword_matches', {}), limit=12)}")
+            st.markdown(f"**Keywords:** {flatten_keyword_matches(row.get('keyword_matches', {}), limit=12)}")
             st.markdown(f"**URL:** {row.get('url', 'N/A')}")
-            st.markdown(f"**Body Preview:** {safe_truncate(str(row.get('body', '')), 950)}")
-    st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(f"**Preview:** {safe_truncate(str(row.get('body', '')), 950)}")
 
+
+# ---------------------------------------------------------------------------
+#  Main
+# ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Main Streamlit entrypoint."""
     inject_global_css()
     df = load_article_dataframe()
     render_header()
 
     if df.empty:
         st.warning(
-            "No data available yet. Run `python3 main.py ingest` and `python3 main.py process` first."
+            "No data available. Run `python3 main.py ingest` and `python3 main.py process` first."
         )
         return
 
     filtered_df = apply_sidebar_filters(df)
 
-    render_section_header(
-        "Key Metrics",
-        "High-level system health and volume indicators for the active filter context.",
-    )
+    render_section_header("Key Metrics", "System health and volume indicators for the active filter context.")
     render_kpi_row(filtered_df)
-    st.markdown("<hr/>", unsafe_allow_html=True)
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-    render_intelligence_briefing_top(filtered_df)
-    st.markdown("<hr/>", unsafe_allow_html=True)
+    render_intelligence_briefing(filtered_df)
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     render_priority_articles(filtered_df, top_n=8)
-    st.markdown("<hr/>", unsafe_allow_html=True)
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     render_trend_section(filtered_df)
-    st.markdown("<hr/>", unsafe_allow_html=True)
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     render_country_analysis(filtered_df)
-    st.markdown("<hr/>", unsafe_allow_html=True)
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     render_articles_section(filtered_df)
 
