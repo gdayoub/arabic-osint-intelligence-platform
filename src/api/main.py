@@ -6,10 +6,12 @@ import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 
 from src.config.logging_config import setup_logging
@@ -18,6 +20,8 @@ from src.database.models import ProcessedArticle, RawArticle
 
 setup_logging()
 logger = logging.getLogger("api")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(
     title="Arabic OSINT Intelligence API",
@@ -29,14 +33,22 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://george-dayoub-portfolio.vercel.app",
+        "https://osint-app-production-c0b4.up.railway.app",
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:8000",
     ],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
 _executor = ThreadPoolExecutor(max_workers=2)
+
+
+@app.get("/dashboard")
+def serve_dashboard():
+    """Serve the premium intelligence dashboard."""
+    return FileResponse(STATIC_DIR / "dashboard.html", media_type="text/html")
 
 
 @app.get("/health")

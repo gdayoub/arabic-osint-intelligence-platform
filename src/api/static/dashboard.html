@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSINT Intelligence Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM — OSINT Intelligence Console
+   Colors / Typography / Spacing / Surfaces / States
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  /* ── Surfaces ──────────────────────────── */
+  --bg-base:        #09090B;
+  --bg-surface:     #0F0F11;
+  --bg-elevated:    #18181B;
+  --bg-overlay:     #1C1C1F;
+  --bg-hover:       #222225;
+
+  /* ── Borders ───────────────────────────── */
+  --border-subtle:  rgba(255,255,255,0.04);
+  --border-default: rgba(255,255,255,0.06);
+  --border-strong:  rgba(255,255,255,0.10);
+
+  /* ── Text ──────────────────────────────── */
+  --text-primary:   #FAFAFA;
+  --text-secondary: #A1A1AA;
+  --text-tertiary:  #71717A;
+  --text-muted:     #52525B;
+
+  /* ── Accent: Crimson ───────────────────── */
+  --red-50:  rgba(220,38,38,0.06);
+  --red-100: rgba(220,38,38,0.10);
+  --red-200: rgba(220,38,38,0.18);
+  --red-400: #F87171;
+  --red-500: #EF4444;
+  --red-600: #DC2626;
+  --red-700: #B91C1C;
+  --red-800: #991B1B;
+  --red-900: #7F1D1D;
+
+  /* ── Semantic ──────────────────────────── */
+  --success:   #22C55E;
+  --success-bg:rgba(34,197,94,0.08);
+  --warning:   #EAB308;
+  --warning-bg:rgba(234,179,8,0.08);
+  --danger:    #DC2626;
+  --danger-bg: rgba(220,38,38,0.08);
+
+  /* ── Typography ────────────────────────── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
+  /* ── Spacing ───────────────────────────── */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+  --space-4: 16px; --space-5: 20px; --space-6: 24px;
+  --space-8: 32px; --space-10: 40px; --space-12: 48px;
+
+  /* ── Radius ────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* ── Transitions ───────────────────────── */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration: 150ms;
+}
+
+/* ── Base ──────────────────────────────────────────────── */
+html {
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Layout ────────────────────────────────────────────── */
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  padding: var(--space-6) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.main {
+  flex: 1;
+  margin-left: 240px;
+  padding: var(--space-8) var(--space-8) var(--space-12);
+  max-width: 1280px;
+}
+
+/* ── Sidebar Brand ─────────────────────────────────────── */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--red-100);
+  border: 1px solid var(--red-200);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand-icon svg { width: 16px; height: 16px; }
+
+.brand-text {
+  font-size: 0.87rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.brand-text span {
+  color: var(--red-500);
+}
+
+.brand-sub {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* ── Sidebar Nav ───────────────────────────────────────── */
+.nav-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.nav-label:first-of-type { margin-top: 0; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 450;
+  cursor: pointer;
+  transition: all var(--duration) var(--ease);
+  margin-bottom: 2px;
+  text-decoration: none;
+}
+
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--red-50);
+  color: var(--text-primary);
+}
+
+.nav-item.active .nav-dot {
+  background: var(--red-600);
+  box-shadow: 0 0 8px rgba(220,38,38,0.4);
+}
+
+.nav-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  transition: all var(--duration) var(--ease);
+}
+
+.nav-item svg {
+  width: 15px; height: 15px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.nav-item:hover svg { opacity: 0.8; }
+.nav-item.active svg { opacity: 1; }
+
+/* ── Sidebar Status ────────────────────────────────────── */
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(34,197,94,0.5);
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.status-text {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Command Header ────────────────────────────────────── */
+.cmd-header {
+  margin-bottom: var(--space-8);
+}
+
+.cmd-header h1 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+  line-height: 1.15;
+}
+
+.cmd-header h1 span { color: var(--red-500); }
+
+.cmd-header p {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  margin-top: var(--space-2);
+  max-width: 560px;
+  line-height: 1.6;
+}
+
+/* ── Section Headers ───────────────────────────────────── */
+.section {
+  margin-bottom: var(--space-10);
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.section-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.section-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* ── KPI Grid ──────────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.kpi {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5) var(--space-5);
+  transition: all var(--duration) var(--ease);
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi:hover {
+  border-color: var(--border-default);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.kpi--alert {
+  border-left: 2px solid var(--red-600);
+}
+
+.kpi--alert .kpi-val { color: var(--red-400); }
+
+.kpi-tag {
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-3);
+}
+
+.kpi-val {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: var(--space-1);
+}
+
+.kpi-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-weight: 450;
+}
+
+/* ── Briefing Panel ────────────────────────────────────── */
+.briefing {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  position: relative;
+}
+
+.briefing::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--red-600), var(--red-800));
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.briefing-title {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--red-500);
+  margin-bottom: var(--space-5);
+}
+
+.briefing-row {
+  display: flex;
+  align-items: baseline;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.briefing-row:last-child { border-bottom: none; }
+
+.briefing-key {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  min-width: 180px;
+  flex-shrink: 0;
+}
+
+.briefing-val {
+  font-size: 0.82rem;
+  font-weight: 550;
+  color: var(--text-primary);
+}
+
+.briefing-val.danger { color: var(--red-400); font-weight: 600; }
+
+/* ── Escalation Cards ──────────────────────────────────── */
+.esc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+.esc-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  transition: all var(--duration) var(--ease);
+}
+
+.esc-card:hover {
+  border-color: var(--border-default);
+  transform: translateY(-1px);
+}
+
+.esc-card--high { border-top: 2px solid var(--red-600); }
+.esc-card--medium { border-top: 2px solid var(--warning); }
+.esc-card--low { border-top: 2px solid var(--success); }
+
+.esc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.esc-badge {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+
+.esc-badge--high { background: var(--danger-bg); color: var(--red-400); border: 1px solid var(--red-200); }
+.esc-badge--medium { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(234,179,8,0.15); }
+.esc-badge--low { background: var(--success-bg); color: var(--success); border: 1px solid rgba(34,197,94,0.15); }
+
+.esc-count {
+  font-family: var(--font-mono);
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: var(--space-1);
+}
+
+.esc-card--high .esc-count { color: var(--red-400); }
+.esc-card--medium .esc-count { color: var(--warning); }
+.esc-card--low .esc-count { color: var(--success); }
+
+.esc-label {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+.esc-bar {
+  height: 3px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  margin-top: var(--space-4);
+  overflow: hidden;
+}
+
+.esc-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 800ms var(--ease);
+}
+
+.esc-card--high .esc-bar-fill { background: var(--red-600); }
+.esc-card--medium .esc-bar-fill { background: var(--warning); }
+.esc-card--low .esc-bar-fill { background: var(--success); }
+
+/* ── Source Cards ──────────────────────────────────────── */
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+.source-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  transition: all var(--duration) var(--ease);
+}
+
+.source-card:hover {
+  border-color: var(--border-default);
+  transform: translateY(-1px);
+}
+
+.source-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.source-count {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-1);
+}
+
+.source-pct {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-bottom: var(--space-4);
+}
+
+.source-bar {
+  height: 3px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.source-bar-fill {
+  height: 100%;
+  background: var(--red-600);
+  border-radius: 2px;
+  transition: width 800ms var(--ease);
+}
+
+/* ── Topic Distribution ────────────────────────────────── */
+.topic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+
+.topic-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  transition: all var(--duration) var(--ease);
+}
+
+.topic-card:hover {
+  border-color: var(--border-default);
+  transform: translateY(-1px);
+}
+
+.topic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.topic-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.topic-count {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.topic-bar {
+  height: 4px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.topic-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 800ms var(--ease);
+}
+
+.topic-bar-fill--politics { background: var(--red-600); }
+.topic-bar-fill--military { background: var(--red-400); }
+.topic-bar-fill--economy { background: var(--text-tertiary); }
+.topic-bar-fill--uncategorized { background: var(--text-muted); }
+.topic-bar-fill--humanitarian { background: var(--warning); }
+.topic-bar-fill--protests { background: #F97316; }
+
+/* ── Article Feed ──────────────────────────────────────── */
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.feed-item {
+  background: var(--bg-surface);
+  padding: var(--space-5) var(--space-5);
+  display: grid;
+  grid-template-columns: 4px 1fr auto;
+  gap: var(--space-4);
+  align-items: start;
+  transition: background var(--duration) var(--ease);
+  cursor: default;
+}
+
+.feed-item:hover {
+  background: var(--bg-elevated);
+}
+
+.feed-esc-bar {
+  width: 3px;
+  border-radius: 2px;
+  min-height: 40px;
+  align-self: stretch;
+}
+
+.feed-esc-bar--high { background: var(--red-600); }
+.feed-esc-bar--medium { background: var(--warning); }
+.feed-esc-bar--low { background: var(--success); }
+
+.feed-content { min-width: 0; }
+
+.feed-title {
+  font-size: 0.85rem;
+  font-weight: 550;
+  color: var(--text-primary);
+  line-height: 1.4;
+  margin-bottom: var(--space-2);
+  direction: auto;
+}
+
+.feed-title a {
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--duration) var(--ease);
+}
+
+.feed-title a:hover { color: var(--red-400); }
+
+.feed-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.feed-tag {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.feed-tag--esc-high { background: var(--danger-bg); border-color: var(--red-200); color: var(--red-400); }
+.feed-tag--esc-medium { background: var(--warning-bg); border-color: rgba(234,179,8,0.15); color: var(--warning); }
+.feed-tag--esc-low { background: var(--success-bg); border-color: rgba(34,197,94,0.15); color: var(--success); }
+
+.feed-source {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.feed-time {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ── Loading / Empty ───────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-overlay) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12) var(--space-6);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/* ── Divider ───────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-8) 0;
+}
+
+/* ── Animate In ────────────────────────────────────────── */
+.animate-in {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: fadeInUp 400ms var(--ease) forwards;
+}
+
+@keyframes fadeInUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.delay-1 { animation-delay: 50ms; }
+.delay-2 { animation-delay: 100ms; }
+.delay-3 { animation-delay: 150ms; }
+.delay-4 { animation-delay: 200ms; }
+.delay-5 { animation-delay: 250ms; }
+.delay-6 { animation-delay: 300ms; }
+.delay-7 { animation-delay: 350ms; }
+.delay-8 { animation-delay: 400ms; }
+
+/* ── Counters animation ────────────────────────────────── */
+.count-up {
+  display: inline-block;
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; padding: var(--space-6); }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .esc-grid { grid-template-columns: repeat(3, 1fr); }
+  .source-grid { grid-template-columns: repeat(2, 1fr); }
+  .topic-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .esc-grid { grid-template-columns: 1fr; }
+  .source-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ════════════════════ SIDEBAR ════════════════════ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-text">OSINT <span>Console</span></div>
+        <div class="brand-sub">Intelligence Platform</div>
+      </div>
+    </div>
+
+    <div class="nav-label">Overview</div>
+    <a class="nav-item active" href="#metrics">
+      <div class="nav-dot"></div>
+      Key Metrics
+    </a>
+    <a class="nav-item" href="#briefing">
+      <div class="nav-dot"></div>
+      Intelligence Briefing
+    </a>
+    <a class="nav-item" href="#escalation">
+      <div class="nav-dot"></div>
+      Escalation Signals
+    </a>
+
+    <div class="nav-label">Analysis</div>
+    <a class="nav-item" href="#sources">
+      <div class="nav-dot"></div>
+      Source Activity
+    </a>
+    <a class="nav-item" href="#topics">
+      <div class="nav-dot"></div>
+      Topic Clusters
+    </a>
+    <a class="nav-item" href="#feed">
+      <div class="nav-dot"></div>
+      Article Feed
+    </a>
+
+    <div class="sidebar-footer">
+      <div class="status-row">
+        <div class="status-dot"></div>
+        <span class="status-text">System Online</span>
+      </div>
+      <div class="status-row">
+        <span class="status-text" id="last-update" style="margin-left: 14px;">Loading...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ════════════════════ MAIN ════════════════════ -->
+  <main class="main">
+
+    <!-- Command Header -->
+    <div class="cmd-header animate-in">
+      <h1>OSINT <span>Intelligence</span> Console</h1>
+      <p>Real-time monitoring of Arabic-language news sources. Classified by topic, escalation risk, and geographic signal.</p>
+    </div>
+
+    <!-- ──── Key Metrics ──── -->
+    <div class="section animate-in delay-1" id="metrics">
+      <div class="section-head">
+        <div class="section-title">Key Metrics</div>
+        <div class="section-sub">SYSTEM HEALTH</div>
+      </div>
+      <div class="kpi-grid" id="kpi-container">
+        <div class="kpi"><div class="skeleton" style="height:80px;"></div></div>
+        <div class="kpi"><div class="skeleton" style="height:80px;"></div></div>
+        <div class="kpi"><div class="skeleton" style="height:80px;"></div></div>
+        <div class="kpi"><div class="skeleton" style="height:80px;"></div></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ──── Intelligence Briefing ──── -->
+    <div class="section animate-in delay-2" id="briefing">
+      <div class="section-head">
+        <div class="section-title">Intelligence Briefing</div>
+        <div class="section-sub">ANALYST SNAPSHOT</div>
+      </div>
+      <div id="briefing-container">
+        <div class="briefing"><div class="skeleton" style="height:160px;"></div></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ──── Escalation Signals ──── -->
+    <div class="section animate-in delay-3" id="escalation">
+      <div class="section-head">
+        <div class="section-title">Escalation Signals</div>
+        <div class="section-sub">THREAT LEVELS</div>
+      </div>
+      <div class="esc-grid" id="esc-container">
+        <div class="esc-card"><div class="skeleton" style="height:100px;"></div></div>
+        <div class="esc-card"><div class="skeleton" style="height:100px;"></div></div>
+        <div class="esc-card"><div class="skeleton" style="height:100px;"></div></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ──── Source Activity ──── -->
+    <div class="section animate-in delay-4" id="sources">
+      <div class="section-head">
+        <div class="section-title">Source Activity</div>
+        <div class="section-sub">INGESTION VOLUME</div>
+      </div>
+      <div class="source-grid" id="source-container">
+        <div class="source-card"><div class="skeleton" style="height:90px;"></div></div>
+        <div class="source-card"><div class="skeleton" style="height:90px;"></div></div>
+        <div class="source-card"><div class="skeleton" style="height:90px;"></div></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ──── Topic Clusters ──── -->
+    <div class="section animate-in delay-5" id="topics">
+      <div class="section-head">
+        <div class="section-title">Topic Clusters</div>
+        <div class="section-sub">CLASSIFICATION</div>
+      </div>
+      <div class="topic-grid" id="topic-container">
+        <div class="topic-card"><div class="skeleton" style="height:50px;"></div></div>
+        <div class="topic-card"><div class="skeleton" style="height:50px;"></div></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ──── Article Feed ──── -->
+    <div class="section animate-in delay-6" id="feed">
+      <div class="section-head">
+        <div class="section-title">Recent Intelligence</div>
+        <div class="section-sub">LATEST ARTICLES</div>
+      </div>
+      <div id="feed-container">
+        <div class="feed-list">
+          <div class="feed-item"><div class="skeleton" style="height:50px; grid-column: span 3;"></div></div>
+          <div class="feed-item"><div class="skeleton" style="height:50px; grid-column: span 3;"></div></div>
+          <div class="feed-item"><div class="skeleton" style="height:50px; grid-column: span 3;"></div></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  API Layer
+// ═══════════════════════════════════════════════════════════════
+
+const API = '';  // Same origin
+
+async function fetchJSON(endpoint) {
+  const res = await fetch(API + endpoint);
+  if (!res.ok) throw new Error(`${endpoint}: ${res.status}`);
+  return res.json();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Count-Up Animation
+// ═══════════════════════════════════════════════════════════════
+
+function animateCount(el, target, duration = 600) {
+  const start = 0;
+  const startTime = performance.now();
+  function step(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(start + (target - start) * eased).toLocaleString();
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Render Functions
+// ═══════════════════════════════════════════════════════════════
+
+function renderKPIs(stats, escalation) {
+  const total = stats.total_raw;
+  const processed = stats.total_processed;
+  const sourceCount = Object.keys(stats.sources).length;
+  const highCount = escalation.escalation?.high || 0;
+
+  const kpis = [
+    { tag: 'INGEST', val: total, label: 'Total Articles', cls: '' },
+    { tag: 'PROC', val: processed, label: 'Processed', cls: '' },
+    { tag: 'SRC', val: sourceCount, label: 'Active Sources', cls: '' },
+    { tag: 'ALERT', val: highCount, label: 'High Escalation', cls: ' kpi--alert' },
+  ];
+
+  document.getElementById('kpi-container').innerHTML = kpis.map((k, i) => `
+    <div class="kpi${k.cls} animate-in delay-${i+1}">
+      <div class="kpi-tag">${k.tag}</div>
+      <div class="kpi-val count-up" data-target="${k.val}">0</div>
+      <div class="kpi-label">${k.label}</div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.kpi-val.count-up').forEach(el => {
+    animateCount(el, parseInt(el.dataset.target), 800);
+  });
+}
+
+function renderBriefing(stats, topics, escalation, recent) {
+  const topSource = Object.entries(stats.sources).sort((a,b) => b[1] - a[1])[0];
+  const topTopic = topics.topics?.[0];
+  const highCount = escalation.escalation?.high || 0;
+
+  const topCountry = recent.reduce((acc, a) => {
+    if (a.country && a.country !== 'Unknown') acc[a.country] = (acc[a.country]||0) + 1;
+    return acc;
+  }, {});
+  const topCountryName = Object.entries(topCountry).sort((a,b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+  const dangerCls = highCount > 0 ? ' danger' : '';
+
+  document.getElementById('briefing-container').innerHTML = `
+    <div class="briefing animate-in">
+      <div class="briefing-title">Analyst Snapshot</div>
+      <div class="briefing-row">
+        <span class="briefing-key">Dominant Topic</span>
+        <span class="briefing-val">${topTopic?.topic || 'N/A'}</span>
+      </div>
+      <div class="briefing-row">
+        <span class="briefing-key">Top Country Signal</span>
+        <span class="briefing-val">${topCountryName}</span>
+      </div>
+      <div class="briefing-row">
+        <span class="briefing-key">High Escalation Count</span>
+        <span class="briefing-val${dangerCls}">${highCount}</span>
+      </div>
+      <div class="briefing-row">
+        <span class="briefing-key">Most Active Source</span>
+        <span class="briefing-val">${topSource?.[0] || 'N/A'}</span>
+      </div>
+      <div class="briefing-row">
+        <span class="briefing-key">Total Processed</span>
+        <span class="briefing-val">${stats.total_processed}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderEscalation(data) {
+  const esc = data.escalation || {};
+  const total = Object.values(esc).reduce((a, b) => a + b, 0) || 1;
+  const levels = ['high', 'medium', 'low'];
+
+  document.getElementById('esc-container').innerHTML = levels.map((level, i) => {
+    const count = esc[level] || 0;
+    const pct = ((count / total) * 100).toFixed(0);
+    return `
+      <div class="esc-card esc-card--${level} animate-in delay-${i+1}">
+        <div class="esc-header">
+          <span class="esc-badge esc-badge--${level}">${level}</span>
+          <span style="font-family:var(--font-mono);font-size:0.65rem;color:var(--text-muted);">${pct}%</span>
+        </div>
+        <div class="esc-count count-up" data-target="${count}">0</div>
+        <div class="esc-label">articles flagged</div>
+        <div class="esc-bar">
+          <div class="esc-bar-fill" style="width: 0%;" data-width="${pct}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.querySelectorAll('.esc-count.count-up').forEach(el => {
+    animateCount(el, parseInt(el.dataset.target), 700);
+  });
+
+  setTimeout(() => {
+    document.querySelectorAll('.esc-bar-fill').forEach(el => {
+      el.style.width = el.dataset.width;
+    });
+  }, 100);
+}
+
+function renderSources(stats) {
+  const sources = Object.entries(stats.sources).sort((a, b) => b[1] - a[1]);
+  const max = sources[0]?.[1] || 1;
+
+  document.getElementById('source-container').innerHTML = sources.map(([ name, count ], i) => {
+    const pct = ((count / stats.total_raw) * 100).toFixed(1);
+    const barPct = ((count / max) * 100).toFixed(0);
+    return `
+      <div class="source-card animate-in delay-${i+1}">
+        <div class="source-name">${name}</div>
+        <div class="source-count count-up" data-target="${count}">0</div>
+        <div class="source-pct">${pct}% of total</div>
+        <div class="source-bar">
+          <div class="source-bar-fill" style="width: 0%;" data-width="${barPct}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.querySelectorAll('.source-count.count-up').forEach(el => {
+    animateCount(el, parseInt(el.dataset.target), 700);
+  });
+
+  setTimeout(() => {
+    document.querySelectorAll('.source-bar-fill').forEach(el => {
+      el.style.width = el.dataset.width;
+    });
+  }, 100);
+}
+
+function renderTopics(data) {
+  const topics = data.topics || [];
+  const max = topics[0]?.count || 1;
+  const colorMap = {
+    'Politics': 'politics', 'Military': 'military', 'Economy': 'economy',
+    'Uncategorized': 'uncategorized', 'Humanitarian': 'humanitarian', 'Protests': 'protests',
+  };
+
+  document.getElementById('topic-container').innerHTML = topics.map((t, i) => {
+    const pct = ((t.count / max) * 100).toFixed(0);
+    const cls = colorMap[t.topic] || 'uncategorized';
+    return `
+      <div class="topic-card animate-in delay-${i+1}">
+        <div class="topic-header">
+          <span class="topic-name">${t.topic}</span>
+          <span class="topic-count">${t.count}</span>
+        </div>
+        <div class="topic-bar">
+          <div class="topic-bar-fill topic-bar-fill--${cls}" style="width: 0%;" data-width="${pct}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  setTimeout(() => {
+    document.querySelectorAll('.topic-bar-fill').forEach(el => {
+      el.style.width = el.dataset.width;
+    });
+  }, 100);
+}
+
+function renderFeed(articles) {
+  if (!articles.length) {
+    document.getElementById('feed-container').innerHTML = '<div class="empty-state">No articles available.</div>';
+    return;
+  }
+
+  document.getElementById('feed-container').innerHTML = `
+    <div class="feed-list">
+      ${articles.map((a, i) => {
+        const esc = (a.escalation || 'low').toLowerCase();
+        const time = a.published_date ? new Date(a.published_date).toLocaleString('en-US', {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false
+        }) : '';
+        return `
+          <div class="feed-item animate-in delay-${Math.min(i+1, 8)}">
+            <div class="feed-esc-bar feed-esc-bar--${esc}"></div>
+            <div class="feed-content">
+              <div class="feed-title"><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a></div>
+              <div class="feed-meta">
+                <span class="feed-tag feed-tag--esc-${esc}">${esc}</span>
+                <span class="feed-tag">${a.topic || 'N/A'}</span>
+                ${a.country && a.country !== 'Unknown' ? `<span class="feed-tag">${a.country}</span>` : ''}
+                <span class="feed-source">${a.source}</span>
+              </div>
+            </div>
+            <div class="feed-time">${time}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Active Nav Tracking
+// ═══════════════════════════════════════════════════════════════
+
+function setupNav() {
+  const sections = document.querySelectorAll('.section[id]');
+  const navItems = document.querySelectorAll('.nav-item[href^="#"]');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(n => n.classList.remove('active'));
+        const active = document.querySelector(`.nav-item[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.3 });
+
+  sections.forEach(s => observer.observe(s));
+
+  navItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.querySelector(item.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Init
+// ═══════════════════════════════════════════════════════════════
+
+async function init() {
+  try {
+    const [stats, topics, escalation, recent] = await Promise.all([
+      fetchJSON('/api/stats'),
+      fetchJSON('/api/topics'),
+      fetchJSON('/api/escalation'),
+      fetchJSON('/api/recent?limit=25'),
+    ]);
+
+    renderKPIs(stats, escalation);
+    renderBriefing(stats, topics, escalation, recent);
+    renderEscalation(escalation);
+    renderSources(stats);
+    renderTopics(topics);
+    renderFeed(recent);
+
+    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    document.getElementById('last-update').textContent = `Updated ${now}`;
+
+    setupNav();
+  } catch (err) {
+    console.error('Dashboard init failed:', err);
+    document.querySelector('.main').innerHTML = `
+      <div class="empty-state" style="margin-top:var(--space-12);">
+        Failed to load intelligence data. Check API connectivity.
+      </div>
+    `;
+  }
+}
+
+init();
+
+// Auto-refresh every 5 minutes
+setInterval(init, 300000);
+</script>
+
+</body>
+</html>
