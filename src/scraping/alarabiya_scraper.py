@@ -30,6 +30,9 @@ class AlArabiyaScraper(BaseScraper):
     adjust selectors inside `extract_article_links` and `parse_article`.
     """
 
+    NAME = "alarabiya_scraper"
+    VERSION = "1.0.0"
+
     def __init__(self, settings: Settings | None = None):
         app_settings = settings or SETTINGS
         super().__init__(

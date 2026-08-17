@@ -12,7 +12,13 @@ from src.config.settings import SETTINGS
 from src.database.db import init_db
 from src.pipeline.ingest_pipeline import run_ingestion
 from src.pipeline.process_pipeline import run_processing
+from scripts.bake_dashboard_data import run_bake
+from src.pipeline.ingest_core import run_core_ingestion
+from src.pipeline.process_core import run_core_processing
 from src.pipeline.run_pipeline import run_full_pipeline
+from src.store.blob import get_blob_store
+from src.store.database import get_core_session, init_core_db
+from src.store.provenance import format_provenance_chain, get_provenance_chain
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,6 +30,21 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("process", help="Process raw_articles into processed_articles")
     sub.add_parser("run-pipeline", help="Run ingestion + processing")
     sub.add_parser("dashboard", help="Launch Streamlit dashboard")
+
+    sub.add_parser("init-core-db", help="Create the entity-resolution core schema (M1)")
+    sub.add_parser("process-core", help="Run topic/escalation/country classifiers over core-schema documents (M1.5)")
+    ingest_core_parser = sub.add_parser("ingest-core", help="Scrape sources and write documents to the core schema (M1.5)")
+    ingest_core_parser.add_argument("--limit-per-source", type=int, default=None)
+
+    bake_parser = sub.add_parser("bake-dashboard", help="Write a static data.json snapshot for the Pages dashboard (M1.5)")
+    bake_parser.add_argument("--out", type=str, default="dist/data.json")
+    bake_parser.add_argument("--recent-limit", type=int, default=30)
+
+    provenance_parser = sub.add_parser("provenance", help="Inspect provenance chains")
+    provenance_sub = provenance_parser.add_subparsers(dest="provenance_command", required=True)
+    show_parser = provenance_sub.add_parser("show", help="Show the provenance chain for a row")
+    show_parser.add_argument("table", choices=["mentions", "entities", "links", "facts"])
+    show_parser.add_argument("id", type=int)
 
     return parser
 
@@ -41,6 +62,25 @@ def main() -> None:
         print(run_processing())
     elif args.command == "run-pipeline":
         print(run_full_pipeline())
+    elif args.command == "init-core-db":
+        init_core_db()
+        print("Core schema created.")
+    elif args.command == "process-core":
+        stats = run_core_processing()
+        print(f"scanned={stats.scanned} processed={stats.processed} errors={stats.errors}")
+    elif args.command == "ingest-core":
+        stats = run_core_ingestion(limit_per_source=args.limit_per_source)
+        print(f"attempted={stats.attempted} inserted={stats.inserted} skipped_existing={stats.skipped_existing}")
+        for source, info in stats.sources.items():
+            print(f"  {source}: {info}")
+    elif args.command == "bake-dashboard":
+        data = run_bake(Path(args.out), recent_limit=args.recent_limit)
+        print(f"wrote {args.out}: total_raw={data['stats']['total_raw']} total_processed={data['stats']['total_processed']} recent={len(data['recent'])}")
+    elif args.command == "provenance" and args.provenance_command == "show":
+        blob_store = get_blob_store()
+        with get_core_session() as session:
+            entries = get_provenance_chain(session, args.table, args.id, blob_store)
+            print(format_provenance_chain(entries))
     elif args.command == "dashboard":
         project_root = Path(__file__).resolve().parent
         env = os.environ.copy()

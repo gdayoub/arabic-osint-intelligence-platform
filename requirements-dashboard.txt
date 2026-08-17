@@ -1,0 +1,19 @@
+# Dependencies for the legacy Streamlit dashboard (src/dashboard/app.py) and
+# FastAPI service (src/api/main.py) — NOT installed by the GitHub Actions
+# pipeline (see .github/workflows/pipeline.yml, which only installs
+# requirements.txt). The static Cloudflare Pages dashboard
+# (src/api/static/dashboard.html + scripts/bake_dashboard_data.py) needs
+# none of these; it's plain HTML/JS fed by a JSON file.
+#
+# Install alongside requirements.txt only if running the Streamlit app or
+# FastAPI service locally: pip install -r requirements.txt -r requirements-dashboard.txt
+-r requirements.txt
+anthropic>=0.40.0
+fastapi==0.115.6
+joblib==1.4.2
+numpy==1.26.4
+pandas==2.2.2
+plotly==5.22.0
+scikit-learn==1.5.1
+streamlit==1.37.1
+uvicorn==0.32.1

@@ -48,6 +48,14 @@ class Settings:
     cnn_seed_urls: List[str] | None = None
     alarabiya_seed_urls: List[str] | None = None
 
+    # Blob storage (M1.5) — document text lives here, not inline in Postgres.
+    blob_backend: str = "local"  # "local" | "r2"
+    blob_local_root: str = "data/blobs"
+    r2_endpoint_url: str | None = None
+    r2_bucket: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+
     @property
     def database_url(self) -> str:
         """Build SQLAlchemy connection URL for PostgreSQL."""
@@ -129,6 +137,12 @@ class Settings:
                     ),
                 )
             ),
+            blob_backend=os.getenv("BLOB_BACKEND", "local"),
+            blob_local_root=os.getenv("BLOB_LOCAL_ROOT", "data/blobs"),
+            r2_endpoint_url=os.getenv("R2_ENDPOINT_URL"),
+            r2_bucket=os.getenv("R2_BUCKET"),
+            r2_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
+            r2_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
         )
 
 

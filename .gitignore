@@ -20,6 +20,11 @@ venv/
 # Data snapshots
 data/raw/
 data/processed/
+data/blobs/
+
+# Pipeline build output (baked dashboard data.json + copied index.html) --
+# generated fresh by every Actions run, not checked in.
+dist/
 
 # Notebook checkpoints
 .ipynb_checkpoints/

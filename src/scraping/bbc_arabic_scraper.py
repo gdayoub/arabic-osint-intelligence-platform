@@ -28,6 +28,9 @@ class BBCArabicScraper(BaseScraper):
     update selectors in this class only.
     """
 
+    NAME = "bbc_arabic_scraper"
+    VERSION = "1.0.0"
+
     def __init__(self, settings: Settings | None = None):
         app_settings = settings or SETTINGS
         super().__init__(

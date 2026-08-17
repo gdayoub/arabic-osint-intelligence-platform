@@ -27,6 +27,9 @@ class CNNArabicScraper(BaseScraper):
     TODO(selector-maintenance): verify selectors for cards/article body when CNN updates layout.
     """
 
+    NAME = "cnn_arabic_scraper"
+    VERSION = "1.0.0"
+
     def __init__(self, settings: Settings | None = None):
         app_settings = settings or SETTINGS
         super().__init__(

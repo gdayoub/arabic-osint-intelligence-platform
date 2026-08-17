@@ -30,6 +30,12 @@ class AlJazeeraScraper(BaseScraper):
     adjust selectors inside `extract_article_links` and `parse_article`.
     """
 
+    # P4: registered as an extractor_version when ingest_core writes a
+    # document scraped by this class. Bump VERSION when selectors change in
+    # a way that could affect what gets extracted.
+    NAME = "aljazeera_scraper"
+    VERSION = "1.0.0"
+
     def __init__(self, settings: Settings | None = None):
         app_settings = settings or SETTINGS
         super().__init__(

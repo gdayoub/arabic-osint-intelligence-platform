@@ -1,17 +1,9 @@
-anthropic>=0.40.0
 beautifulsoup4==4.12.3
-fastapi==0.115.6
-joblib==1.4.2
-numpy==1.26.4
-pandas==2.2.2
-plotly==5.22.0
+boto3==1.35.36
 psycopg2-binary==2.9.9
 python-dateutil==2.9.0.post0
+PyYAML==6.0.2
 python-dotenv==1.0.1
 requests==2.32.3
-scikit-learn==1.5.1
 SQLAlchemy==2.0.32
-streamlit==1.37.1
-uvicorn==0.32.1
 pytest==8.3.2
-# cache bust Tue Mar 24 11:26:39 PM EDT 2026

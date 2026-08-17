@@ -789,15 +789,21 @@ function renderFeed(articles) {
 
 async function init() {
   try {
-    const [stats,topics,esc,recent] = await Promise.all([fetchJSON('/api/stats'),fetchJSON('/api/topics'),fetchJSON('/api/escalation'),fetchJSON('/api/recent?limit=30')]);
+    // Fed by a static data.json baked by GitHub Actions after each pipeline
+    // run (every 6h), not a live API -- see docs/adr/0008. No backend, no
+    // cold start, ever; the tradeoff is data is only as fresh as the last run.
+    const d = await fetchJSON('data.json');
+    const {stats, topics, escalation: esc, recent} = d;
     renderKPIs(stats,esc); renderBriefing(stats,topics,esc,recent); renderEscalation(esc);
     renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(recent); renderFeed(recent);
-    document.getElementById('last-update').textContent = `Online \u00B7 ${new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})}`;
+    const updated = new Date(d.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+    document.getElementById('last-update').textContent = `Updated \u00B7 ${updated}`;
   } catch(e) { console.error(e); document.getElementById('last-update').textContent = 'Connection Error'; }
 }
 
 init();
-setInterval(init, 300000);
+// No polling interval -- data.json only changes once per pipeline run, so
+// re-fetching it every few minutes would just refetch the same bytes.
 </script>
 </body>
 </html>

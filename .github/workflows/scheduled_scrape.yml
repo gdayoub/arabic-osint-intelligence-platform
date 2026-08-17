@@ -1,9 +1,12 @@
-name: Scheduled OSINT Pipeline
+name: Scheduled OSINT Pipeline (legacy, Railway)
 
+# Superseded by .github/workflows/pipeline.yml (M1.5) -- Railway is
+# decommissioned (docs/adr/0008-actions-runtime-static-pages-dashboard.md).
+# Cron disabled; kept as workflow_dispatch only in case a manual rollback to
+# the Railway-hosted pipeline is ever needed. Delete once pipeline.yml has
+# proven itself over a few weeks of scheduled runs.
 on:
-  schedule:
-    - cron: '0 */6 * * *'   # every 6 hours at :00 UTC
-  workflow_dispatch:          # allows manual trigger from GitHub Actions UI
+  workflow_dispatch:
 
 jobs:
   trigger-pipeline:

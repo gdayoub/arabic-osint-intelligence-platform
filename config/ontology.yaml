@@ -1,0 +1,54 @@
+# Ontology config — P3: object types and link types are DATA, not code.
+# src/core/ never imports this file's contents by name (no `if object_type == "person"`
+# anywhere in core/). Only src/core/ontology.py reads this file, and only
+# application code outside core/ ever branches on a specific type string.
+#
+# Adding a new object type (e.g. "event" in M7, or a new language's types)
+# means editing this file, not touching src/core/.
+
+object_types:
+  person:
+    display_name: {en: Person, ar: شخص}
+    properties:
+      - {name: canonical_name, type: text, required: true}
+      - {name: aliases, type: "text[]", required: false}
+      - {name: date_of_birth, type: date, required: false}
+
+  organization:
+    display_name: {en: Organization, ar: منظمة}
+    properties:
+      - {name: canonical_name, type: text, required: true}
+      - {name: org_type, type: enum, values: [government, military, ngo, media, commercial]}
+
+  location:
+    display_name: {en: Location, ar: موقع}
+    properties:
+      - {name: canonical_name, type: text, required: true}
+      # `geom` is declared now but not backed by a real PostGIS column until M7 —
+      # see docs/adr/0001-core-persistence-separation.md for why that's a
+      # deliberate, deferred decision rather than an oversight.
+      - {name: geom, type: point, required: false}
+      - {name: geonames_id, type: integer, required: false}
+
+link_types:
+  - {name: mentioned_with, from: "*", to: "*", symmetric: true}
+  - {name: member_of, from: person, to: organization, symmetric: false}
+  - {name: located_in, from: "*", to: location, symmetric: false}
+
+# Document-level facts (M1.5): metadata that doesn't belong on the documents
+# table itself, because it's news-specific (a Telegram post has no "author"
+# in this sense) and documents.* must stay domain-agnostic (P3). Recorded
+# via record_document_fact(), validated against this list, never as columns.
+# See docs/adr/0007-source-metadata-as-facts.md.
+document_attributes:
+  - {name: title, type: text}
+  - {name: subtitle, type: text}
+  - {name: author, type: text}
+  - {name: tags, type: "text[]"}
+  - {name: source_section, type: text}
+  # Written by src/pipeline/process_core.py — the same rule-based classifiers
+  # as src/processing/, ported onto the core schema as facts instead of
+  # processed_articles columns.
+  - {name: topic, type: text}
+  - {name: escalation, type: enum, values: [high, medium, low]}
+  - {name: country, type: text}
