@@ -1,4 +1,18 @@
-# ADR 0008: GitHub Actions as the pipeline runtime; a static, baked Pages dashboard
+# ADR 0008: GitHub Actions as the pipeline runtime; a static, baked dashboard
+
+> **Correction, 2026-08-18 (first real deploy):** the decision below assumed
+> `wrangler pages deploy` would create a classic Cloudflare Pages project on
+> first run. It doesn't, and — discovered while actually setting this up —
+> new Cloudflare accounts' "upload static files" flow now creates a
+> **Worker with static assets** (`*.workers.dev`), not a classic Pages
+> project (`*.pages.dev`); the two are different resource types with
+> different deploy APIs. Adapted: `wrangler.toml` (`[assets] directory =
+> "./dist"`) + `wrangler deploy`, targeting the Worker Cloudflare's own UI
+> created, instead of `wrangler pages deploy --project-name=...`. The
+> reasoning below (static site, no backend, baked JSON) is unaffected —
+> only the specific Cloudflare product changed, and arguably to the more
+> current one, since Cloudflare has been steering users toward Workers +
+> static assets as the unified replacement for Pages.
 
 ## Context
 

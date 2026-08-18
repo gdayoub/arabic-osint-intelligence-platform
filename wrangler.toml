@@ -1,0 +1,10 @@
+# Deploys dist/ (baked dashboard) as a static-assets Cloudflare Worker.
+# Matches the existing "arabic-osint-dashboard" resource, created via
+# Cloudflare's "Upload your static files" flow, which creates a Worker
+# with static assets rather than a classic Pages project on current
+# accounts — see docs/adr/0008-actions-runtime-static-pages-dashboard.md.
+name = "arabic-osint-dashboard"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = "./dist"

@@ -51,9 +51,11 @@ jobs:
 
       - run: cp src/api/static/dashboard.html dist/index.html
 
-      - name: Deploy to Cloudflare Pages
+      # Deploys as a Workers-with-static-assets site (wrangler.toml), not
+      # classic Pages -- see docs/adr/0008 for why.
+      - name: Deploy dashboard
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=arabic-osint-dashboard --branch=main
+          command: deploy
