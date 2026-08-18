@@ -33,7 +33,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://george-dayoub-portfolio.vercel.app",
-        "https://osint-app-production-c0b4.up.railway.app",
+        # Railway origin removed -- this FastAPI service is no longer
+        # deployed anywhere (see docs/adr/0010); the dashboard is a static
+        # site (docs/adr/0008) that doesn't call this API at all.
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:8000",

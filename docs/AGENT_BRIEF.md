@@ -143,6 +143,29 @@ link_types:
 
 ---
 
+### M1.5 — Hosting and storage
+
+Not in the original milestone list, but anticipated by §2 ("raw text is being moved to compressed object storage, metadata stays in Postgres") and completed in the same working session as M1, before M2 began. Recorded here so the milestone list matches what was actually built, per the brief's own instruction to keep this document honest as the spec of record.
+
+**Why it jumped the queue:** M1 established where facts live and how they prove their lineage; M1.5 established where the *text itself* lives, and on what infrastructure the whole system runs day to day. Both are foundational enough that building M2's extractors against a hosting setup destined to change felt like the wrong order — this was a judgment call, not a rule, and it cost M2 roughly its own duration in delay.
+
+**Build:**
+- `BlobStore` interface (`src/store/blob.py`) — `LocalDiskBlobStore` (default, no credentials) and `R2BlobStore` (boto3, Cloudflare R2), selected by `BLOB_BACKEND` env var
+- `documents.text` becomes a blob pointer (`text_blob_key`, `text_sha256`, `text_length`) instead of inline storage; `Document.text` in `src/core/models.py` is unchanged — P2 is enforced at exactly the same line it always was
+- `record_document_fact()` — the sanctioned path for document metadata (title, author, tags, topic, escalation, country) that's news-specific and therefore doesn't belong on the domain-agnostic `documents` table (P3)
+- `src/pipeline/ingest_core.py` — writes scraped articles to the core schema instead of legacy `raw_articles`
+- `src/pipeline/process_core.py` — the existing rule-based topic/escalation/country classifiers, ported onto the core schema as facts; doubles as the non-LLM baseline M3 requires before any LLM-based extraction
+- `.github/workflows/pipeline.yml` — GitHub Actions runs ingest → process → bake on a 6-hour cron, replacing the Railway-hosted webhook trigger
+- `scripts/bake_dashboard_data.py` + `src/api/static/dashboard.html` — a static dashboard fed by a baked `data.json`, deployed to Cloudflare (Workers with static assets), no backend, no cold start
+
+**Explicitly out of scope:** a backfill of the old Railway-hosted corpus. Railway's Postgres service was paused behind a paywall mid-migration; un-pausing it to preserve a corpus that would be stale within weeks wasn't worth the cost. The new database started empty and repopulates via the scheduled pipeline.
+
+**Checkpoint (met 2026-08-18):** pipeline runs from GitHub Actions on a schedule with no manual trigger; real articles land in Neon with their text in R2; `provenance show` on a real ingested document's fact resolves its source text back out of R2; the public dashboard shows live classified data with zero backend and zero recurring cost.
+
+See `docs/adr/0004` through `0011` for the individual decisions and their tradeoffs.
+
+---
+
 ### M2 — Language adapters and Arabic normalization
 
 **Build:**
