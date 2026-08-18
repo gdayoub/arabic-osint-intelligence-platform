@@ -5,6 +5,8 @@
 # accounts — see docs/adr/0008-actions-runtime-static-pages-dashboard.md.
 name = "arabic-osint-dashboard"
 compatibility_date = "2026-08-01"
+main = "worker.js"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"

@@ -1,8 +1,0 @@
-# Cloudflare static-assets header rules (same syntax as Cloudflare Pages'
-# _headers convention, also honored by Workers static assets).
-#
-# data.json is public aggregate/title data only -- never document body text
-# (enforced by tests/unit/test_bake.py) -- so a wildcard origin is fine here.
-# Lets the portfolio site (a different origin) fetch it directly.
-/data.json
-  Access-Control-Allow-Origin: *
