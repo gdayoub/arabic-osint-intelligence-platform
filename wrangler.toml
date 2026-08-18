@@ -10,3 +10,8 @@ main = "worker.js"
 [assets]
 directory = "./dist"
 binding = "ASSETS"
+# Without this, Cloudflare serves any path matching a file in dist/
+# directly from the asset store, bypassing worker.js's fetch handler
+# entirely -- confirmed via curl that the CORS header never appeared
+# without this line, despite the handler code itself being correct.
+run_worker_first = true
