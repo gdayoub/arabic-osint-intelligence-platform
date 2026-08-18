@@ -59,3 +59,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+          # Pinned explicitly: wrangler-action's default (3.90.0) predates
+          # run_worker_first in [assets], which wrangler.toml relies on.
+          wranglerVersion: '4'
