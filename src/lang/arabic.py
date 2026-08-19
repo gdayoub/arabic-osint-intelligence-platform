@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from src.lang.base import AlignedText
+
 # tatweel is a stretchy character people stick in the middle of words to make
 # them look nice. it carries zero meaning so i drop it.
 TATWEEL = "ـ"
@@ -56,6 +58,16 @@ _FOLD_TABLE = str.maketrans(
 
 _PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 _SPACES = re.compile(r"\s+")
+
+# the aligned pass walks one character at a time so it wants plain lookups
+# instead of the translate tables. same data either way.
+_DELETE_SET = frozenset(TATWEEL + DIACRITICS)
+_FOLD_MAP = {
+    "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
+    "ى": "ي", "ة": "ه", "ؤ": "و", "ئ": "ي", "ء": "",
+    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+    "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+}
 
 # ال is the arabic the. it sticks onto the front of the word instead of being
 # its own word. for names i strip it because الأسد and أسد are the same family
@@ -110,22 +122,68 @@ class ArabicAdapter:
     def normalize(self, text: str) -> str:
         """fold text down to something i can compare.
 
-        order matters here. NFKC first because it can turn a ligature into
-        several plain letters and i want those plain letters to go through
-        the rest of the steps too.
+        this just throws away the alignment. i route it through the aligned
+        version so the two can never drift apart and disagree about what a
+        normalized string looks like.
+        """
+        return self.normalize_aligned(text).text
+
+    def normalize_aligned(self, text: str) -> AlignedText:
+        """fold the text and remember where every surviving character came from.
+
+        the whole thing is one pass over the original characters instead of
+        the chained translate calls normalize used to do. i have to go
+        character by character here because that is the only way to know
+        which source index produced which output character.
+
+        NFKC gets applied per character rather than to the whole string.
+        that is not identical to NFKC on the full string because real NFKC
+        can compose across character boundaries. it does not matter here
+        because the sequences that would compose are combining marks and i
+        delete every one of those anyway.
         """
         if not text:
-            return ""
+            return AlignedText("", ())
 
-        # NFKC unpacks compatibility characters. arabic has single codepoints
-        # for whole words like ﷲ and presentation forms for letters depending
-        # on where they sit in a word. this flattens all of that.
-        result = unicodedata.normalize("NFKC", text)
-        result = result.translate(_DELETE_TABLE)
-        result = result.translate(_FOLD_TABLE)
-        result = _PUNCT.sub(" ", result)
-        result = _SPACES.sub(" ", result)
-        return result.strip().lower()
+        chars: list[str] = []
+        offsets: list[int] = []
+
+        for index, char in enumerate(text):
+            # NFKC unpacks ligatures and presentation forms. arabic has a
+            # single codepoint for whole words like ﷲ and separate codepoints
+            # for the same letter depending where it sits in a word. one
+            # source character can expand into several output ones and they
+            # all point back at the same original index.
+            for expanded in unicodedata.normalize("NFKC", char):
+                if expanded in _DELETE_SET:
+                    continue
+
+                folded = _FOLD_MAP.get(expanded, expanded)
+                if not folded:
+                    # bare hamza folds to nothing so there is no output
+                    # character and nothing to record an offset for
+                    continue
+
+                if _PUNCT.match(folded) or folded.isspace():
+                    # punctuation and whitespace both become a single space.
+                    # i skip it if the last thing i wrote was already a space
+                    # so runs collapse without needing a second pass
+                    if chars and chars[-1] != " ":
+                        chars.append(" ")
+                        offsets.append(index)
+                    continue
+
+                chars.append(folded.lower())
+                offsets.append(index)
+
+        # strip a trailing space. there can only ever be one because of the
+        # collapse above. leading spaces get skipped by the same check since
+        # chars is empty at the start.
+        if chars and chars[-1] == " ":
+            chars.pop()
+            offsets.pop()
+
+        return AlignedText("".join(chars), tuple(offsets))
 
     def tokenize(self, text: str) -> list[str]:
         normalized = self.normalize(text)

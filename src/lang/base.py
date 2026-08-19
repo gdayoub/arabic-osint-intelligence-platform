@@ -12,7 +12,36 @@ P2 would break. the original text stays exactly as it was scraped.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+
+@dataclass(frozen=True, slots=True)
+class AlignedText:
+    """normalized text plus a map back to where each character came from.
+
+    i need this because i match patterns against normalized text but a
+    mention has to point at the original. those are different lengths.
+    مُحَمَّد is eight characters and normalizes to four so an offset in one
+    is meaningless in the other.
+
+    source_offsets[i] is the index in the original string that produced
+    normalized character i. so a match on normalized[s:e] turns into
+    original[source_offsets[s] : source_offsets[e - 1] + 1].
+
+    the end is the last character plus one instead of source_offsets[e]
+    because the normalized character at e might not exist or might come
+    from much further along if characters got dropped in between.
+    """
+
+    text: str
+    source_offsets: tuple[int, ...]
+
+    def original_span(self, start: int, end: int) -> tuple[int, int]:
+        """turn a span in the normalized text into a span in the original."""
+        if start >= end or not self.source_offsets:
+            raise ValueError(f"bad span {start}:{end}")
+        return self.source_offsets[start], self.source_offsets[end - 1] + 1
 
 
 @runtime_checkable
@@ -38,6 +67,14 @@ class LanguageAdapter(Protocol):
 
     def normalize(self, text: str) -> str:
         """fold text into a comparison key. never store this."""
+        ...
+
+    def normalize_aligned(self, text: str) -> AlignedText:
+        """same fold but it also tells me where every character came from.
+
+        extractors need this. matching happens on the folded text and the
+        mention has to land on the original or P2 breaks.
+        """
         ...
 
     def tokenize(self, text: str) -> list[str]:

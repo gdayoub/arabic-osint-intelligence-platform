@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from src.lang.base import AlignedText
+
 _PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 _SPACES = re.compile(r"\s+")
 _LATIN = re.compile(r"[A-Za-z]")
@@ -36,16 +38,45 @@ class EnglishAdapter:
         return latin / len(letters)
 
     def normalize(self, text: str) -> str:
+        return self.normalize_aligned(text).text
+
+    def normalize_aligned(self, text: str) -> AlignedText:
+        """same shape as the arabic one. one pass keeping the source index.
+
+        writing this is what caught that i had added normalize_aligned to
+        the protocol and only implemented it on the arabic side. the tests
+        went red on english which is exactly the job this class exists to
+        do. one implementation would have let it through.
+
+        NFKD splits an accented letter into a base plus a combining mark and
+        then i drop the mark so café and cafe compare equal. arabic gets the
+        same result from its own diacritic table.
+        """
         if not text:
-            return ""
-        # NFKD splits accented letters into a base letter plus a combining
-        # mark. then i throw the marks away so café and cafe compare equal.
-        # arabic does the same job with its own diacritic table.
-        decomposed = unicodedata.normalize("NFKD", text)
-        stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-        result = _PUNCT.sub(" ", stripped)
-        result = _SPACES.sub(" ", result)
-        return result.strip().lower()
+            return AlignedText("", ())
+
+        chars: list[str] = []
+        offsets: list[int] = []
+
+        for index, char in enumerate(text):
+            for expanded in unicodedata.normalize("NFKD", char):
+                if unicodedata.combining(expanded):
+                    continue
+
+                if _PUNCT.match(expanded) or expanded.isspace():
+                    if chars and chars[-1] != " ":
+                        chars.append(" ")
+                        offsets.append(index)
+                    continue
+
+                chars.append(expanded.lower())
+                offsets.append(index)
+
+        if chars and chars[-1] == " ":
+            chars.pop()
+            offsets.pop()
+
+        return AlignedText("".join(chars), tuple(offsets))
 
     def tokenize(self, text: str) -> list[str]:
         normalized = self.normalize(text)

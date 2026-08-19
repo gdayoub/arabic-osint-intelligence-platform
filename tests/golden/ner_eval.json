@@ -1,0 +1,114 @@
+{
+  "_comment": "Hand labelled evaluation set for mention extraction. Sentences are written in the style of the actual corpus. I store the mention TEXT and TYPE rather than character offsets because hand counting offsets in Arabic is how you get a broken eval set that quietly reports the wrong number. The loader finds each mention in the sentence and asserts it appears exactly once so the offsets are derived and verified instead of typed. Mentions deliberately include entities the gazetteer does not know about, because an eval set containing only things the extractor already has is not measuring anything.",
+  "documents": [
+    {
+      "text": "قال الرئيس الأمريكي دونالد ترامب إن واشنطن لن تتفاوض مع طهران في الوقت الحالي.",
+      "mentions": [
+        {"text": "دونالد ترامب", "type": "person"},
+        {"text": "واشنطن", "type": "location"},
+        {"text": "طهران", "type": "location"}
+      ]
+    },
+    {
+      "text": "أعلن حزب الله في بيروت أن قواته لن تنسحب من جنوب لبنان قبل انسحاب الجيش الإسرائيلي.",
+      "mentions": [
+        {"text": "حزب الله", "type": "organization"},
+        {"text": "بيروت", "type": "location"},
+        {"text": "لبنان", "type": "location"},
+        {"text": "الجيش الإسرائيلي", "type": "organization"}
+      ]
+    },
+    {
+      "text": "التقى بشار الأسد وفدا روسيا في دمشق لبحث الوضع في إدلب.",
+      "mentions": [
+        {"text": "بشار الأسد", "type": "person"},
+        {"text": "دمشق", "type": "location"},
+        {"text": "إدلب", "type": "location"}
+      ]
+    },
+    {
+      "text": "حذرت الوكالة الدولية للطاقة الذرية من تسارع برنامج إيران النووي.",
+      "mentions": [
+        {"text": "الوكالة الدولية للطاقة الذرية", "type": "organization"},
+        {"text": "إيران", "type": "location"}
+      ]
+    },
+    {
+      "text": "وصل الرئيس التركي رجب طيب أردوغان إلى الدوحة في زيارة رسمية.",
+      "mentions": [
+        {"text": "رجب طيب أردوغان", "type": "person"},
+        {"text": "الدوحة", "type": "location"}
+      ]
+    },
+    {
+      "text": "ناقش مسرور بارزاني في أربيل تداعيات الهجوم على مطار الموصل.",
+      "mentions": [
+        {"text": "مسرور بارزاني", "type": "person"},
+        {"text": "أربيل", "type": "location"},
+        {"text": "الموصل", "type": "location"}
+      ]
+    },
+    {
+      "text": "أكد المتحدث باسم البيت الأبيض أن العقوبات على موسكو ستستمر.",
+      "mentions": [
+        {"text": "البيت الأبيض", "type": "organization"},
+        {"text": "موسكو", "type": "location"}
+      ]
+    },
+    {
+      "text": "فرضت المحكمة الجنائية الدولية إجراءات جديدة بشأن الوضع في غزة ورفح.",
+      "mentions": [
+        {"text": "المحكمة الجنائية الدولية", "type": "organization"},
+        {"text": "غزة", "type": "location"},
+        {"text": "رفح", "type": "location"}
+      ]
+    },
+    {
+      "text": "قال محمد باقر قاليباف إن زيارته إلى بغداد تهدف إلى تعزيز العلاقات.",
+      "mentions": [
+        {"text": "محمد باقر قاليباف", "type": "person"},
+        {"text": "بغداد", "type": "location"}
+      ]
+    },
+    {
+      "text": "أعلن صندوق النقد الدولي عن مراجعة توقعاته لاقتصاد مصر والسودان.",
+      "mentions": [
+        {"text": "صندوق النقد الدولي", "type": "organization"},
+        {"text": "مصر", "type": "location"},
+        {"text": "السودان", "type": "location"}
+      ]
+    },
+    {
+      "text": "فاز الزمالك على الأهلي في مباراة الدوري أمس بهدف وحيد.",
+      "mentions": [
+        {"text": "الزمالك", "type": "organization"},
+        {"text": "الأهلي", "type": "organization"}
+      ]
+    },
+    {
+      "text": "أشار المصرف المركزي إلى استقرار العملة رغم الضغوط الخارجية.",
+      "mentions": []
+    },
+    {
+      "text": "التقى وزير الخارجية الفرنسي جان نويل بارو نظيره في تونس.",
+      "mentions": [
+        {"text": "جان نويل بارو", "type": "person"},
+        {"text": "تونس", "type": "location"}
+      ]
+    },
+    {
+      "text": "أعلنت شركة أرامكو السعودية عن نتائجها الفصلية في الرياض.",
+      "mentions": [
+        {"text": "أرامكو السعودية", "type": "organization"},
+        {"text": "الرياض", "type": "location"}
+      ]
+    },
+    {
+      "text": "ناقش مجلس الأمن الدولي مشروع قرار جديد بشأن اليمن.",
+      "mentions": [
+        {"text": "مجلس الأمن الدولي", "type": "organization"},
+        {"text": "اليمن", "type": "location"}
+      ]
+    }
+  ]
+}
