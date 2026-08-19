@@ -1,0 +1,17 @@
+# transformer NER dependencies. NOT installed by the scheduled pipeline.
+#
+# torch plus transformers is about 2GB installed and adds minutes to every
+# CI run. the scheduled pipeline uses the gazetteer which needs none of it.
+# this file exists so i can run the model locally and in the M3 evaluation
+# without dragging that weight into the thing that runs every six hours.
+#
+#     pip install -r requirements.txt -r requirements-ml.txt
+#
+# the CPU wheel is deliberate. github runners have no GPU and the default
+# torch wheel pulls a few hundred MB of CUDA libraries that would never be
+# used. install with the cpu index to avoid them:
+#
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+torch>=2.2
+transformers>=4.44
