@@ -38,4 +38,7 @@ dist/
 # OS/editor
 .DS_Store
 .vscode/
-.idea/.w*.txt
+.idea/
+
+# Scratch files from watching CI runs
+.w*.txt
