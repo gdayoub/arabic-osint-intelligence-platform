@@ -1,0 +1,50 @@
+name: Maintenance
+
+# Manual only. These are one-off data repairs, not part of the scheduled
+# pipeline — retract-mojibake in particular reads every document's blob to
+# inspect it, which is fine occasionally and wasteful every six hours.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Maintenance task to run'
+        required: true
+        type: choice
+        options:
+          - retract-mojibake
+      apply:
+        description: 'Actually apply changes (unchecked = dry run)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      BLOB_BACKEND: r2
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run maintenance task
+        run: |
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            python main.py ${{ inputs.task }} --apply
+          else
+            python main.py ${{ inputs.task }}
+          fi
