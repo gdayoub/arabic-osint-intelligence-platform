@@ -26,7 +26,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.store.database import get_core_session
-from src.store.orm import DocumentORM, FactORM
+from src.store.orm import DocumentORM, FactORM, MentionORM
+from src.lang.arabic import ArabicAdapter
 from src.store.translations import get_cached
 
 RECENT_LIMIT_DEFAULT = 30
@@ -176,6 +177,49 @@ def _daily_counts_for(documents: list[DocumentORM], days: int = DAILY_WINDOW_DAY
     return [{"date": day, "count": counts[day]} for day in sorted(counts)]
 
 
+TOP_MENTIONS_PER_TYPE = 12
+
+
+def top_mentions(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dict[str, list[dict[str, Any]]]:
+    """most mentioned things per object type.
+
+    I group by the NORMALIZED surface form so بشار الأسد and بشار الاسد count
+    as one row. that is the M2 folding earning its keep. I still display the
+    most common raw spelling because showing the reader a folded string would
+    be showing them something nobody wrote.
+
+    this is not entity resolution. الأسد and بشار الأسد are still two rows
+    here because nothing has decided they are the same thing yet. M4 is what
+    collapses those and the difference should be visible on this panel when
+    it lands.
+    """
+    adapter = ArabicAdapter()
+
+    rows = session.execute(
+        select(MentionORM.text, MentionORM.object_type)
+        .join(DocumentORM, DocumentORM.id == MentionORM.document_id)
+        .where(MentionORM.retracted.is_(False), DocumentORM.retracted.is_(False))
+    ).all()
+
+    # normalized key -> counts, plus a tally of raw spellings so I can show
+    # whichever one people actually write most
+    grouped: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    for text, object_type in rows:
+        key = adapter.normalize(text)
+        if key:
+            grouped[(object_type, key)][text] += 1
+
+    by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for (object_type, _key), spellings in grouped.items():
+        display, _ = spellings.most_common(1)[0]
+        by_type[object_type].append({"name": display, "count": sum(spellings.values())})
+
+    return {
+        object_type: sorted(items, key=lambda e: e["count"], reverse=True)[:per_type]
+        for object_type, items in by_type.items()
+    }
+
+
 def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str, Any]:
     total_raw = (
         session.scalar(select(func.count()).select_from(DocumentORM).where(DocumentORM.retracted.is_(False))) or 0
@@ -239,6 +283,12 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
         "escalation": {"escalation": dict(escalation_counts)},
         "recent": recent,
         "daily": _daily_counts(session),
+        "mentions": {
+            "total": session.scalar(
+                select(func.count()).select_from(MentionORM).where(MentionORM.retracted.is_(False))
+            ) or 0,
+            "top": top_mentions(session),
+        },
     }
 
 

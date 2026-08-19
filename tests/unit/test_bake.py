@@ -29,7 +29,7 @@ def test_bake_output_matches_dashboard_expected_shape(session, ontology, blob_st
 
     data = bake(session)
 
-    assert set(data.keys()) == {"generated_at", "schema_version", "stats", "topics", "escalation", "recent", "daily"}
+    assert set(data.keys()) == {"generated_at", "schema_version", "stats", "topics", "escalation", "recent", "daily", "mentions"}
     assert data["stats"]["total_raw"] == 1
     assert data["stats"]["total_processed"] == 1
     assert data["stats"]["sources"] == {"AlJazeeraArabic": 1}
@@ -164,3 +164,50 @@ def test_documents_without_a_country_produce_no_page(session, ontology, blob_sto
     session.commit()
 
     assert bake_country_pages(session) == {}
+
+
+def test_top_mentions_groups_spelling_variants(session, ontology, blob_store):
+    """the M2 folding earning its keep in a user visible way. بشار الأسد and
+    بشار الاسد are the same person written two ways and must count as one."""
+    from src.extract.base import ExtractedMention
+    from src.pipeline.extract_core import extract_one_document
+    from scripts.bake_dashboard_data import top_mentions
+
+    extractor_v = register_extractor_version(session, "fake", "1.0.0")
+
+    class Fake:
+        name, version = "fake", "1.0.0"
+        def __init__(self, spans): self._s = spans
+        def extract(self, text): return list(self._s)
+
+    for i, spelling in enumerate(["بشار الأسد", "بشار الاسد", "بشار الأسد"]):
+        text = f"قال {spelling} شيئا"
+        doc = create_document(session, source="t", text=text, content_hash=f"tm-{i}", blob_store=blob_store)
+        start = text.index(spelling)
+        extract_one_document(
+            session, doc,
+            Fake([ExtractedMention(text=spelling, start=start, end=start + len(spelling), object_type="person")]),
+            extractor_v, ontology,
+        )
+    session.commit()
+
+    top = top_mentions(session)
+
+    assert len(top["person"]) == 1, "two spellings of one name should collapse to one row"
+    assert top["person"][0]["count"] == 3
+    # displayed spelling is the most common raw form, not the folded key
+    assert top["person"][0]["name"] == "بشار الأسد"
+
+
+def test_bake_includes_mention_totals(session, ontology, blob_store):
+    extractor = register_extractor_version(session, "test", "1.0.0")
+    _seed_document(
+        session, ontology, blob_store, extractor,
+        url="https://example.com/m1", body="نص", title="عنوان", topic="Politics", escalation="low",
+    )
+    session.commit()
+
+    data = bake(session)
+
+    assert data["mentions"]["total"] == 0
+    assert data["mentions"]["top"] == {}

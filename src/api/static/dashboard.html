@@ -417,6 +417,14 @@ body::after {
 }
 .country-chip:hover { border-color: var(--red-200); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 /* Affordance that these are now links into per-country pages, not static chips. */
+.ent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.ent-col-title { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.ent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); }
+.ent-row:last-child { border-bottom: none; }
+.ent-name { font-size: 0.84rem; color: var(--text-primary); direction: auto; }
+.ent-bar { flex: 1; height: 3px; background: var(--bg-elevated); border-radius: 2px; overflow: hidden; margin: 0 4px; }
+.ent-bar-fill { height: 100%; border-radius: 2px; transition: width 900ms var(--ease); width: 0; }
+.ent-count { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-tertiary); min-width: 30px; text-align: right; }
 .country-chip::after { content: '→'; color: var(--text-muted); font-size: 0.8rem; margin-left: 10px; opacity: 0; transform: translateX(-4px); transition: all 250ms var(--ease); }
 .country-chip:hover::after { opacity: 1; transform: translateX(0); color: var(--red-400); }
 .country-name { font-size: 0.82rem; font-weight: 550; color: var(--text-primary); }
@@ -620,6 +628,12 @@ body::after {
   </div>
   <div class="divider"></div>
 
+  <!-- Entities -->
+  <div class="section">
+    <div class="section-head reveal"><div class="section-title">Named Entities</div><div class="section-sub">Most Mentioned</div></div>
+    <div id="entity-container"></div>
+  </div>
+
   <!-- Feed -->
   <div class="section">
     <div class="section-head reveal"><div class="section-title">Recent Intelligence</div><div class="section-sub">Latest Articles</div><button id="en-toggle" class="en-toggle" aria-pressed="true" hidden>EN ON</button></div>
@@ -779,6 +793,34 @@ function renderCountries(countries) {
   observe();
 }
 
+function renderEntities(mentions) {
+  const el = document.getElementById('entity-container');
+  const top = mentions && mentions.top;
+  if (!top || !Object.keys(top).length) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:20px 0">No entity mentions extracted yet.</div>';
+    return;
+  }
+
+  const COLORS = { person: '#DC2626', organization: '#EAB308', location: '#22C55E' };
+  const order = ['person', 'organization', 'location'];
+
+  el.innerHTML = `<div class="ent-grid stagger">${order.filter(t => top[t] && top[t].length).map(type => {
+    const rows = top[type];
+    const max = rows[0].count || 1;
+    return `<div class="card">
+      <div class="ent-col-title"><span class="dot" style="background:${COLORS[type]}"></span>${type}</div>
+      ${rows.map(r => `<div class="ent-row">
+        <span class="ent-name">${r.name}</span>
+        <span class="ent-bar"><span class="ent-bar-fill" data-w="${((r.count/max)*100).toFixed(0)}%" style="background:${COLORS[type]}"></span></span>
+        <span class="ent-count">${r.count}</span>
+      </div>`).join('')}
+    </div>`;
+  }).join('')}</div>`;
+
+  observe();
+  setTimeout(() => document.querySelectorAll('.ent-bar-fill[data-w]').forEach(b => { b.style.width = b.dataset.w; }), 400);
+}
+
 function renderFeed(articles) {
   if (!articles.length) { document.getElementById('feed-container').innerHTML = '<div style="color:var(--text-muted);padding:20px 0">No articles available.</div>'; return; }
   document.getElementById('feed-container').innerHTML = `<div class="feed-list">${articles.map((a,i) => {
@@ -826,7 +868,7 @@ async function init() {
     const d = await fetchJSON('data.json');
     const {stats, topics, escalation: esc, recent} = d;
     renderKPIs(stats,esc); renderBriefing(stats,topics,esc,recent); renderEscalation(esc);
-    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(d.countries); renderFeed(recent);
+    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(d.countries); renderEntities(d.mentions); renderFeed(recent);
     const updated = new Date(d.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
     document.getElementById('last-update').textContent = `Updated \u00B7 ${updated}`;
   } catch(e) { console.error(e); document.getElementById('last-update').textContent = 'Connection Error'; }
