@@ -38,4 +38,4 @@ dist/
 # OS/editor
 .DS_Store
 .vscode/
-.idea/
+.idea/.w*.txt
