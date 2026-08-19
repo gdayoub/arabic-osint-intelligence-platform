@@ -95,3 +95,57 @@ next step is not "pick one" but ensemble them — union the spans, since their
 failure modes are close to complementary (model finds unknown people,
 gazetteer holds the closed location set). That is worth measuring before
 M4 depends on the output.
+
+## 2026-08-19 — M4 blocking and pair scoring
+
+**Blocking arithmetic on the live corpus.** 4,589 mentions means
+4589 x 4588 / 2 = **10,527,166** pairs if every pair is compared. At a
+realistic 50 microseconds per scored pair that is about nine minutes for
+354 articles, and it grows quadratically while the corpus grows linearly.
+Multi-key blocking (last token, first+last initial, sorted token set,
+character trigrams) only scores pairs that share a key.
+
+Reduction ratio is reported alongside **pair completeness** deliberately.
+Reduction ratio alone is gameable: dropping every pair scores 1.0 and finds
+nothing. Both numbers or neither.
+
+**Pair scorer, learned not hand tuned.** Logistic regression over six
+features, 51 hand labelled pairs, leave-one-out cross validation because 51
+rows is far too few for a held out split.
+
+| | |
+|---|---|
+| leave-one-out AUC | **0.935** |
+| threshold chosen | 0.60 |
+| precision at 0.60 | 1.00 |
+| recall at 0.60 | 0.59 |
+
+Threshold is biased above the F1-maximising point on purpose. A wrong merge
+fuses two real people, is nearly invisible afterwards, and is painful to
+undo. A missed merge just leaves two entities for the review queue.
+
+Learned weights:
+
+| feature | weight |
+|---|---|
+| key_overlap | +2.915 |
+| same_source | −0.427 |
+| name_similarity | −0.387 |
+| temporal_proximity | +0.120 |
+| co_mention_overlap | +0.114 |
+| same_type | 0.000 |
+
+**A label leak I caused and had to fix.** The first run scored **AUC 1.000**
+with `same_source` at +2.017 and `name_similarity` at −0.013 — the model
+had learned to ignore the name entirely. Cause: `build_dataset` assigned
+source and date *from the label*, giving positives a shared source one day
+apart and negatives different sources twenty days apart. The label was
+sitting in the feature vector under another name. Context features are now
+drawn from a seeded RNG that never sees the label, the three uninformative
+features correctly learned weights near zero, and AUC fell to a believable
+0.935. **An AUC of exactly 1.000 on a real task is a bug report.**
+
+`name_similarity` landing negative is not a glitch. Conditional on blocking
+keys already overlapping, extra raw string similarity is mild evidence of a
+*confusable* pair — حسن vs حسين scores 0.933 while the same-person pair
+بشار الأسد vs بشار الاسد scores 0.96. The model learned that trap.

@@ -1,0 +1,311 @@
+{
+  "_comment": "Hand labelled mention pairs for training the pair scorer. same=1 means the two mentions refer to the same real world thing. The negatives are chosen to be HARD: حسن/حسين and رامي/سامي are one letter apart, and مسرور بارزاني/مسعود بارزاني share a family name. An easy negative set would train a model that only knows how to reject obviously different strings, which is not the decision that is actually hard. context_strength is a coarse stand-in for how much co-occurring-entity overlap the pair has; the training script turns it into the co_mention_overlap feature.",
+  "pairs": [
+    {
+      "a": "بشار الأسد",
+      "b": "بشار الاسد",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "مصطفى",
+      "b": "مصطفي",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "إبراهيم",
+      "b": "ابراهيم",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "أردوغان",
+      "b": "اردوغان",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "فاطمة",
+      "b": "فاطمه",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "يحيى",
+      "b": "يحيي",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "عبد الله",
+      "b": "عبدالله",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "زيلينسكي",
+      "b": "زيلينسكى",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "نتنياهو",
+      "b": "نتنياهو",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "دونالد ترامب",
+      "b": "دونالد ترمب",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "علي خامنئي",
+      "b": "علي خامنئي",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "قاليباف",
+      "b": "قاليباف",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "السيسي",
+      "b": "السيسى",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "الحريري",
+      "b": "الحريري",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "بن سلمان",
+      "b": "بن سلمان",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "بشار الأسد",
+      "b": "الأسد",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "دونالد ترامب",
+      "b": "ترامب",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "بنيامين نتنياهو",
+      "b": "نتنياهو",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "رجب طيب أردوغان",
+      "b": "أردوغان",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "محمد باقر قاليباف",
+      "b": "قاليباف",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "فولوديمير زيلينسكي",
+      "b": "زيلينسكي",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "عبد الفتاح السيسي",
+      "b": "السيسي",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "الأمم المتحدة",
+      "b": "الامم المتحدة",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "حزب الله",
+      "b": "حزب الله",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "السعودية",
+      "b": "المملكة العربية السعودية",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "غزة",
+      "b": "قطاع غزة",
+      "same": true,
+      "context_strength": "high"
+    },
+    {
+      "a": "الناتو",
+      "b": "حلف شمال الأطلسي",
+      "same": true,
+      "context_strength": "med"
+    },
+    {
+      "a": "حسن",
+      "b": "حسين",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "محمد",
+      "b": "أحمد",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "رامي",
+      "b": "سامي",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "امين",
+      "b": "ايمن",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "خالد",
+      "b": "خليل",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "نور",
+      "b": "نوري",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "فهد",
+      "b": "فهمي",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "سعيد",
+      "b": "سعد",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "الجزائر",
+      "b": "الجزيرة",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "طهران",
+      "b": "تهران",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "سوريا",
+      "b": "تركيا",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "مصر",
+      "b": "قطر",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "بيروت",
+      "b": "بغداد",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "عبدالله",
+      "b": "عبدالرحمن",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "مسرور بارزاني",
+      "b": "مسعود بارزاني",
+      "same": false,
+      "context_strength": "med"
+    },
+    {
+      "a": "بشار الأسد",
+      "b": "ماهر الأسد",
+      "same": false,
+      "context_strength": "med"
+    },
+    {
+      "a": "دونالد ترامب",
+      "b": "حزب الله",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "نتنياهو",
+      "b": "غزة",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "الأمم المتحدة",
+      "b": "الزمالك",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "موسكو",
+      "b": "الرياض",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "خامنئي",
+      "b": "أردوغان",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "ماكرون",
+      "b": "ستارمر",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "العراق",
+      "b": "إيران",
+      "same": false,
+      "context_strength": "low"
+    },
+    {
+      "a": "حماس",
+      "b": "الناتو",
+      "same": false,
+      "context_strength": "low"
+    }
+  ]
+}

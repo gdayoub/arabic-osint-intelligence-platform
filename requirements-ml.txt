@@ -15,3 +15,7 @@
 -r requirements.txt
 torch>=2.2
 transformers>=4.44
+
+# training the pair scorer. inference is pure python so this never gets
+# installed by the scheduled pipeline. see src/resolve/scorer.py.
+scikit-learn>=1.5

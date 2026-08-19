@@ -1,0 +1,24 @@
+{
+  "_comment": "Learned by scripts/train_pair_scorer.py from tests/golden/pair_labels.json. Do not hand edit. Retrain after changing PairFeatures or the label set.",
+  "feature_names": [
+    "name_similarity",
+    "key_overlap",
+    "co_mention_overlap",
+    "temporal_proximity",
+    "same_source",
+    "same_type"
+  ],
+  "coefficients": [
+    -0.38727821588656636,
+    2.9146602039585465,
+    0.11385964278537736,
+    0.12000789415532688,
+    -0.42710610034849605,
+    0.0004612013994622047
+  ],
+  "intercept": -0.5957435208883064,
+  "threshold": 0.6,
+  "trained_at": "2026-08-19T08:55:22.988785+00:00",
+  "training_pairs": 51,
+  "auc": 0.9351851851851851
+}
