@@ -59,7 +59,12 @@ class ModelExtractor:
     name = "camelbert_ner_extractor"
     version = "1.0.0"
 
-    def __init__(self, model_name: str = DEFAULT_MODEL, min_confidence: float = 0.5) -> None:
+    def __init__(
+        self,
+        model_name: str = DEFAULT_MODEL,
+        min_confidence: float = 0.5,
+        aggregation_strategy: str = "average",
+    ) -> None:
         # imported here and not at module top so the checkpoint script can
         # import this file to check whether the model is available without
         # paying for torch when it is not
@@ -71,16 +76,25 @@ class ModelExtractor:
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForTokenClassification.from_pretrained(model_name)
 
-        # aggregation_strategy simple does the B- and I- merging for me and
-        # returns whole entities with character offsets already attached.
-        # i could merge the tags by hand and i did try. the library version
-        # handles the awkward cases like an I- tag with no B- in front of it
-        # which happens more than you would think.
+        # this argument matters more than it looks and i got it wrong first
+        # time. i started on simple and the eval set caught it immediately.
+        #
+        # simple merges consecutive tokens that share a tag but it does NOT
+        # group subword pieces into words first. so when the model tagged
+        # مسرور as two pieces and started a fresh B- on the second one i got
+        # مس and رور بارزاني as two separate people instead of one. exactly
+        # the subword failure this whole class is supposed to handle.
+        #
+        # average groups the pieces of a word together first and then
+        # averages the scores across them. first and max also group properly
+        # and differ only in which score they keep. i went with average
+        # because the confidence then reflects the whole word rather than
+        # whichever piece happened to come first.
         self._pipeline = pipeline(
             "token-classification",
             model=model,
             tokenizer=tokenizer,
-            aggregation_strategy="simple",
+            aggregation_strategy=aggregation_strategy,
         )
 
     def extract(self, text: str) -> list[ExtractedMention]:

@@ -49,3 +49,49 @@ ratio. zstd was not installed or measured, consistent with the "don't add a
 dependency to solve a problem you don't have yet" rule — if a future
 measurement on real corpus shows gzip is a real bottleneck (unlikely at this
 volume), that's the trigger to benchmark zstd for real, not this entry.
+
+## 2026-08-19 — M3 mention extraction: gazetteer vs transformer
+
+**Method:** `scripts/m3_checkpoint.py` against `tests/golden/ner_eval.json`
+(15 documents, 36 gold spans, hand labelled). Exact span match — predicted
+start, end and type must all equal a gold one. Micro averaged.
+
+| extractor | P | R | **F1** |
+|---|---|---|---|
+| `gazetteer_extractor` v1.0.0 (97 patterns) | 0.94 | 0.86 | **0.90** |
+| `camelbert_ner_extractor` v1.0.0 | 0.89 | 0.89 | **0.89** |
+
+Per type:
+
+| type | gazetteer F1 | model F1 |
+|---|---|---|
+| person | 0.91 | **1.00** |
+| location | **0.92** | 0.87 |
+| organization | 0.84 | 0.84 |
+
+**The aggregate is a tie and the aggregate is misleading.** The per-type
+split is the real finding:
+
+- **The model is perfect on people.** It found `جان نويل بارو` and
+  `مسرور بارزاني`, neither of which is in the gazetteer. That is the whole
+  argument for a model — people are an open set and a dictionary cannot
+  enumerate them.
+- **The gazetteer wins on locations.** Countries and cities are a closed
+  set that a list handles perfectly, and the model invents locations from
+  adjectival usage (`وفدا روسيا` → tagged `روسيا`).
+- **Both are equally mediocre on organizations**, for different reasons.
+
+**A bug found by measuring, not by reading.** The first run scored the model
+at 0.83 with person F1 0.77. `aggregation_strategy="simple"` merges
+consecutive same-tag tokens but does not group subword pieces into words
+first, so `مسرور بارزاني` came back as `مس` + `رور بارزاني` — two people
+instead of one. Switching to `"average"`, which groups word pieces before
+aggregating, took the model from 0.83 to 0.89 and person F1 from 0.77 to
+1.00. Nothing about the model changed. One argument did.
+
+**Decision:** the scheduled pipeline keeps the gazetteer. A 2GB dependency
+and minutes of CI per run is not justified by −0.01 F1 overall. The honest
+next step is not "pick one" but ensemble them — union the spans, since their
+failure modes are close to complementary (model finds unknown people,
+gazetteer holds the closed location set). That is worth measuring before
+M4 depends on the output.

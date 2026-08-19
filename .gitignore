@@ -42,3 +42,6 @@ dist/
 
 # Scratch files from watching CI runs
 .w*.txt
+
+# hypothesis keeps a database of failing examples plus temp files
+.hypothesis/
