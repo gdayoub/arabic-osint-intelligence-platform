@@ -16,6 +16,7 @@ from scripts.bake_dashboard_data import run_bake
 from src.pipeline.extract_core import run_core_extraction
 from src.pipeline.ingest_core import run_core_ingestion
 from src.pipeline.process_core import run_core_processing
+from src.pipeline.resolve_core import run_core_resolution
 from src.pipeline.retract_mojibake import run_retract_mojibake
 from src.pipeline.translate_core import run_core_translation
 from src.pipeline.run_pipeline import run_full_pipeline
@@ -41,6 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     extract_parser = sub.add_parser("extract-core", help="Extract entity mentions from core-schema documents (M3)")
     extract_parser.add_argument("--limit", type=int, default=500)
+
+    resolve_parser = sub.add_parser("resolve-core", help="Resolve mentions into entities (M4)")
+    resolve_parser.add_argument("--max-block-size", type=int, default=100)
 
     translate_parser = sub.add_parser("translate-core", help="Translate recent document titles AR->EN via DeepL (M5)")
     translate_parser.add_argument("--document-limit", type=int, default=200)
@@ -92,6 +96,15 @@ def main() -> None:
             f"scanned={stats.documents_scanned} processed={stats.documents_processed} "
             f"mentions={stats.mentions_written} errors={stats.errors}"
         )
+    elif args.command == "resolve-core":
+        stats = run_core_resolution(max_block_size=args.max_block_size)
+        print(
+            f"mentions={stats.mentions} candidate_pairs={stats.candidate_pairs} "
+            f"(reduction {stats.reduction_ratio:.4f}) matched={stats.matched_pairs} "
+            f"entities={stats.entities_created} retracted={stats.entities_retracted} "
+            f"split={stats.giant_components_split}"
+        )
+        print(f"cluster sizes: {stats.size_histogram}")
     elif args.command == "translate-core":
         stats = run_core_translation(document_limit=args.document_limit, max_new=args.max_new)
         print(

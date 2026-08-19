@@ -52,6 +52,11 @@ jobs:
       # costs 2GB plus minutes of CI. see benchmarks/results.md.
       - run: python main.py extract-core
 
+      # full recompute. resolution is global so a new mention can merge two
+      # clusters that were separate yesterday and there is no correct way to
+      # resolve one mention on its own.
+      - run: python main.py resolve-core
+
       # Skipped cleanly when DEEPL_API_KEY isn't configured, and never fails
       # the run: a spent quota or a DeepL outage should cost English titles,
       # not the whole pipeline. The dashboard renders Arabic either way.

@@ -182,6 +182,40 @@ def create_entity(
     return _to_entity(entity_row)
 
 
+def add_entity_evidence(
+    session: Session,
+    entity: Entity,
+    mention: Mention,
+    extractor_version: ExtractorVersion,
+) -> None:
+    """attach one more mention to an existing entity as evidence.
+
+    create_entity takes a single founding mention. an entity resolved from a
+    cluster has many, and every one of them is a separate piece of evidence
+    that needs its own provenance row. without this the entity would claim
+    forty mentions in entity_mentions while provenance only justified one,
+    and "why does the system believe this" would have a much thinner answer
+    than the data suggests.
+
+    idempotent on re-run because entity_mentions has a composite primary key
+    and I check before inserting rather than letting it raise.
+    """
+    existing = session.get(EntityMentionORM, (entity.id, mention.id))
+    if existing is not None:
+        return
+
+    session.add(EntityMentionORM(entity_id=entity.id, mention_id=mention.id))
+    session.add(
+        ProvenanceORM(
+            target_table="entities",
+            target_id=entity.id,
+            document_id=mention.document_id,
+            mention_id=mention.id,
+            extractor_version_id=extractor_version.id,
+        )
+    )
+
+
 def link_entities(
     session: Session,
     link_type: str,
