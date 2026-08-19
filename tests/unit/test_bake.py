@@ -29,7 +29,7 @@ def test_bake_output_matches_dashboard_expected_shape(session, ontology, blob_st
 
     data = bake(session)
 
-    assert set(data.keys()) == {"generated_at", "schema_version", "stats", "topics", "escalation", "recent", "daily", "mentions"}
+    assert set(data.keys()) == {"generated_at", "schema_version", "stats", "topics", "escalation", "recent", "daily", "mentions", "entities"}
     assert data["stats"]["total_raw"] == 1
     assert data["stats"]["total_processed"] == 1
     assert data["stats"]["sources"] == {"AlJazeeraArabic": 1}
@@ -211,3 +211,43 @@ def test_bake_includes_mention_totals(session, ontology, blob_store):
 
     assert data["mentions"]["total"] == 0
     assert data["mentions"]["top"] == {}
+
+
+def test_top_entities_shows_the_merged_surface_forms(session, ontology, blob_store):
+    """the M4 payoff made visible. an entity that swallowed several spellings
+    has to show which ones or a reader cannot check the merge."""
+    from src.pipeline.resolve_core import resolve_all
+    from scripts.bake_dashboard_data import top_entities
+    from src.store.provenance import create_mention
+
+    extractor = register_extractor_version(session, "gazetteer_extractor", "1.0.0")
+    for i in range(3):
+        text = "قال دونالد ترامب اليوم"
+        doc = create_document(
+            session, source="t", text=text, content_hash=f"te-{i}", blob_store=blob_store,
+            url=f"https://example.com/te-{i}",
+        )
+        create_mention(session, doc, "دونالد ترامب", 4, 16, "person", extractor, ontology)
+    session.flush()
+
+    resolve_all(session, ontology)
+    session.commit()
+
+    top = top_entities(session)
+
+    assert len(top["person"]) == 1
+    assert top["person"][0]["count"] == 3, "all three mentions attach to one entity"
+
+
+def test_bake_includes_entity_totals(session, ontology, blob_store):
+    extractor = register_extractor_version(session, "test", "1.0.0")
+    _seed_document(
+        session, ontology, blob_store, extractor,
+        url="https://example.com/e1", body="نص", title="عنوان", topic="Politics", escalation="low",
+    )
+    session.commit()
+
+    data = bake(session)
+
+    assert data["entities"]["total"] == 0
+    assert data["entities"]["top"] == {}

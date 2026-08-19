@@ -417,6 +417,8 @@ body::after {
 }
 .country-chip:hover { border-color: var(--red-200); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 /* Affordance that these are now links into per-country pages, not static chips. */
+.ent-forms { font-size: 0.68rem; color: var(--text-muted); direction: auto; margin-top: 2px; font-family: var(--font-mono); }
+.ent-merged { display: inline-block; font-family: var(--font-mono); font-size: 0.56rem; letter-spacing: 0.06em; color: var(--red-400); border: 1px solid var(--red-200); border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
 .ent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .ent-col-title { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
 .ent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); }
@@ -630,7 +632,7 @@ body::after {
 
   <!-- Entities -->
   <div class="section">
-    <div class="section-head reveal"><div class="section-title">Named Entities</div><div class="section-sub">Most Mentioned</div></div>
+    <div class="section-head reveal"><div class="section-title">Named Entities</div><div class="section-sub">Resolved &amp; Ranked</div></div>
     <div id="entity-container"></div>
   </div>
 
@@ -793,7 +795,36 @@ function renderCountries(countries) {
   observe();
 }
 
-function renderEntities(mentions) {
+function renderEntities(entities, mentions) {
+  const el = document.getElementById('entity-container');
+  const top = entities && entities.top;
+
+  // fall back to raw mention counts if resolution has not run yet, so the
+  // panel degrades to the old view instead of going blank
+  if (!top || !Object.keys(top).length) return renderMentionCounts(mentions);
+
+  const COLORS = { person: '#DC2626', organization: '#EAB308', location: '#22C55E' };
+  const order = ['person', 'organization', 'location'];
+
+  el.innerHTML = `<div class="ent-grid stagger">${order.filter(t => top[t] && top[t].length).map(type => {
+    const rows = top[type];
+    const max = rows[0].count || 1;
+    return `<div class="card">
+      <div class="ent-col-title"><span class="dot" style="background:${COLORS[type]}"></span>${type}</div>
+      ${rows.map(r => `<div class="ent-row" style="flex-wrap:wrap">
+        <span class="ent-name">${r.name}${r.surface_forms && r.surface_forms.length > 1 ? `<span class="ent-merged">${r.surface_forms.length} FORMS</span>` : ''}</span>
+        <span class="ent-bar"><span class="ent-bar-fill" data-w="${((r.count/max)*100).toFixed(0)}%" style="background:${COLORS[type]}"></span></span>
+        <span class="ent-count">${r.count}</span>
+        ${r.surface_forms && r.surface_forms.length > 1 ? `<div class="ent-forms" style="flex-basis:100%">${r.surface_forms.join('  ·  ')}</div>` : ''}
+      </div>`).join('')}
+    </div>`;
+  }).join('')}</div>`;
+
+  observe();
+  setTimeout(() => document.querySelectorAll('.ent-bar-fill[data-w]').forEach(b => { b.style.width = b.dataset.w; }), 400);
+}
+
+function renderMentionCounts(mentions) {
   const el = document.getElementById('entity-container');
   const top = mentions && mentions.top;
   if (!top || !Object.keys(top).length) {
@@ -868,7 +899,7 @@ async function init() {
     const d = await fetchJSON('data.json');
     const {stats, topics, escalation: esc, recent} = d;
     renderKPIs(stats,esc); renderBriefing(stats,topics,esc,recent); renderEscalation(esc);
-    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(d.countries); renderEntities(d.mentions); renderFeed(recent);
+    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(d.countries); renderEntities(d.entities, d.mentions); renderFeed(recent);
     const updated = new Date(d.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
     document.getElementById('last-update').textContent = `Updated \u00B7 ${updated}`;
   } catch(e) { console.error(e); document.getElementById('last-update').textContent = 'Connection Error'; }

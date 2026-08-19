@@ -26,7 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.store.database import get_core_session
-from src.store.orm import DocumentORM, FactORM, MentionORM
+from src.store.orm import DocumentORM, EntityMentionORM, EntityORM, FactORM, MentionORM
 from src.lang.arabic import ArabicAdapter
 from src.store.translations import get_cached
 
@@ -220,6 +220,49 @@ def top_mentions(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dic
     }
 
 
+def top_entities(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dict[str, list[dict[str, Any]]]:
+    """most mentioned RESOLVED entities per type.
+
+    the difference from top_mentions is the whole point of M4. that one
+    counts surface strings so ترامب and دونالد ترامب are two rows. this one
+    counts entities so they are one row with both spellings listed under it.
+
+    surface_forms comes along because a reader should be able to see WHY two
+    rows became one. an entity that silently swallowed four spellings is
+    much harder to trust than one that shows its working.
+    """
+    rows = session.execute(
+        select(
+            EntityORM.id,
+            EntityORM.canonical_name,
+            EntityORM.object_type,
+            EntityORM.properties,
+            func.count(EntityMentionORM.mention_id).label("mentions"),
+        )
+        .join(EntityMentionORM, EntityMentionORM.entity_id == EntityORM.id)
+        .where(EntityORM.retracted.is_(False))
+        .group_by(EntityORM.id, EntityORM.canonical_name, EntityORM.object_type, EntityORM.properties)
+    ).all()
+
+    by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for _eid, name, object_type, properties, mentions in rows:
+        forms = (properties or {}).get("surface_forms") or []
+        by_type[object_type].append(
+            {
+                "name": name,
+                "count": mentions,
+                # only worth showing when resolution actually merged
+                # something. one form means nothing was joined.
+                "surface_forms": forms if len(forms) > 1 else [],
+            }
+        )
+
+    return {
+        object_type: sorted(items, key=lambda e: e["count"], reverse=True)[:per_type]
+        for object_type, items in by_type.items()
+    }
+
+
 def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str, Any]:
     total_raw = (
         session.scalar(select(func.count()).select_from(DocumentORM).where(DocumentORM.retracted.is_(False))) or 0
@@ -288,6 +331,12 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
                 select(func.count()).select_from(MentionORM).where(MentionORM.retracted.is_(False))
             ) or 0,
             "top": top_mentions(session),
+        },
+        "entities": {
+            "total": session.scalar(
+                select(func.count()).select_from(EntityORM).where(EntityORM.retracted.is_(False))
+            ) or 0,
+            "top": top_entities(session),
         },
     }
 
