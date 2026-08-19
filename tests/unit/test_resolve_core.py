@@ -211,3 +211,56 @@ def test_a_name_more_frequent_than_the_block_cap_still_resolves(session, ontolog
 
     entity = session.scalar(select(EntityORM).where(EntityORM.retracted.is_(False)))
     assert entity.properties["mention_count"] == 40
+
+
+def test_gazetteer_aliases_of_one_person_become_one_entity(session, ontology, blob_store):
+    """the ترامب bug exactly as it appeared on the live dashboard.
+
+    four surface forms sat as four separate rows totalling 575 mentions. the
+    gazetteer already declares all four to be aliases of دونالد ترامب and
+    resolution was ignoring that and trying to rediscover it with fuzzy
+    matching, which failed because ترامب and ترمب share no trigrams.
+    """
+    extractor = register_extractor_version(session, "gazetteer_extractor", "1.0.0")
+    _document_with_mentions(
+        session, blob_store, ontology, extractor,
+        name="trump",
+        spellings=["ترامب", "ترمب", "دونالد ترامب", "دونالد ترمب"],
+        hash_prefix="alias",
+    )
+    session.flush()
+
+    stats = resolve_all(session, ontology)
+
+    assert stats.entities_created == 1, "four aliases of one person are one entity"
+    entity = session.scalar(select(EntityORM).where(EntityORM.retracted.is_(False)))
+    assert entity.canonical_name == "دونالد ترامب"
+    assert len(entity.properties["surface_forms"]) == 4
+
+
+def test_names_the_gazetteer_does_not_know_still_go_through_the_scorer(session, ontology, blob_store):
+    """the dictionary handles what it knows. everything else still has to be
+    resolved the hard way, so an unknown name must not silently vanish."""
+    extractor = register_extractor_version(session, "gazetteer_extractor", "1.0.0")
+    _document_with_mentions(
+        session, blob_store, ontology, extractor,
+        name="unknown", spellings=["جان نويل بارو", "جان نويل بارو"], hash_prefix="unknown",
+    )
+    session.flush()
+
+    stats = resolve_all(session, ontology)
+
+    assert stats.entities_created == 1
+    entity = session.scalar(select(EntityORM).where(EntityORM.retracted.is_(False)))
+    assert entity.canonical_name == "جان نويل بارو"
+
+
+def test_two_different_known_people_do_not_merge_via_the_gazetteer(session, ontology, blob_store):
+    extractor = register_extractor_version(session, "gazetteer_extractor", "1.0.0")
+    _document_with_mentions(
+        session, blob_store, ontology, extractor,
+        name="two", spellings=["ترامب", "نتنياهو"], hash_prefix="two-known",
+    )
+    session.flush()
+
+    assert resolve_all(session, ontology).entities_created == 2

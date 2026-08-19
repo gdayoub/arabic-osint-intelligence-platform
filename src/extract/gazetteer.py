@@ -32,6 +32,11 @@ class GazetteerExtractor:
     def __init__(self, gazetteer_path: Path | None = None, adapter: ArabicAdapter | None = None) -> None:
         self._adapter = adapter or ArabicAdapter()
         self._automaton = Automaton()
+        # normalized surface form -> (object_type, canonical name). the
+        # gazetteer already asserts that ترامب and دونالد ترامب name the same
+        # person, and resolution was throwing that away and trying to
+        # rediscover it with a fuzzy scorer. this is what lets it just know.
+        self._canonical_by_surface: dict[str, tuple[str, str]] = {}
         self._load(gazetteer_path or _GAZETTEER_PATH)
 
     def _load(self, path: Path) -> None:
@@ -46,11 +51,25 @@ class GazetteerExtractor:
                     key = self._adapter.normalize(surface)
                     if key:
                         self._automaton.add(key, payload=(object_type, canonical))
+                        self._canonical_by_surface[key] = (object_type, canonical)
 
         self._automaton.build()
 
     def __len__(self) -> int:
         return len(self._automaton)
+
+    def canonical_for(self, normalized_surface: str) -> tuple[str, str] | None:
+        """what the gazetteer thinks this surface form names.
+
+        returns (object_type, canonical) or None if the form is not in the
+        dictionary. resolution uses this to merge known aliases without
+        guessing, and falls back to the learned scorer for everything else.
+
+        this is the same tradeoff as M3. the dictionary is exact on what it
+        knows and blind to everything else, so I use it where it knows and
+        the fuzzy path where it does not.
+        """
+        return self._canonical_by_surface.get(normalized_surface)
 
     def extract(self, text: str) -> list[ExtractedMention]:
         if not text:

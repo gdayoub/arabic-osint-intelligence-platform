@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from src.core.models import Mention
 from src.core.ontology import Ontology
 from src.lang.arabic import ArabicAdapter
+from src.extract.gazetteer import GazetteerExtractor
 from src.resolve.blocking import KeyBlocker
 from src.resolve.cluster import cluster_pairs
 from src.resolve.features import MentionContext, compute_features
@@ -138,9 +139,11 @@ def resolve_all(
     adapter: ArabicAdapter | None = None,
     scorer: PairScorer | None = None,
     max_block_size: int = 100,
+    gazetteer: GazetteerExtractor | None = None,
 ) -> ResolveStats:
     adapter = adapter or ArabicAdapter()
     scorer = scorer or PairScorer()
+    gazetteer = gazetteer if gazetteer is not None else GazetteerExtractor()
     stats = ResolveStats()
 
     contexts = load_mention_contexts(session, adapter)
@@ -172,9 +175,28 @@ def resolve_all(
     # them up front, run the expensive machinery on ONE representative per
     # distinct surface form, and expand back at the end. blocks shrink from
     # hundreds of members to a handful and nothing gets dropped.
+    # the grouping key is the gazetteer's canonical name when it has one,
+    # otherwise the normalized surface form. so every alias of a known name
+    # lands in one group without the scorer being involved: ترامب, ترمب,
+    # دونالد ترامب and دونالد ترمب are four surface forms the dictionary
+    # already declares to be one person, and rediscovering that with fuzzy
+    # matching would be solving a problem I had the answer to.
+    #
+    # unknown names still group only with byte identical twins and go to the
+    # learned scorer from there. same split as M3: dictionary where it knows,
+    # model where it does not.
     groups: dict[tuple[str, str], list[int]] = defaultdict(list)
     for mention_id, context in contexts.items():
-        groups[(context.object_type, context.normalized_name)].append(mention_id)
+        known = gazetteer.canonical_for(context.normalized_name) if gazetteer else None
+        # only trust the dictionary when it agrees with how the mention was
+        # typed. سوريا is a location in the gazetteer, so a mention tagged
+        # person with that text is a disagreement and not an identity, and
+        # taking the dictionary's word for it would merge a person into a
+        # country. on disagreement I fall back to grouping by surface form.
+        if known and known[0] != context.object_type:
+            known = None
+        key = known if known else (context.object_type, context.normalized_name)
+        groups[key].append(mention_id)
 
     representatives = {members[0]: members for members in groups.values()}
     stats.exact_duplicate_groups = len(representatives)
