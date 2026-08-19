@@ -413,8 +413,12 @@ body::after {
   padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between;
   transition: all 350ms var(--ease);
+  text-decoration: none; cursor: pointer;
 }
 .country-chip:hover { border-color: var(--red-200); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+/* Affordance that these are now links into per-country pages, not static chips. */
+.country-chip::after { content: '→'; color: var(--text-muted); font-size: 0.8rem; margin-left: 10px; opacity: 0; transform: translateX(-4px); transition: all 250ms var(--ease); }
+.country-chip:hover::after { opacity: 1; transform: translateX(0); color: var(--red-400); }
 .country-name { font-size: 0.82rem; font-weight: 550; color: var(--text-primary); }
 .country-count { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; color: var(--red-400); }
 
@@ -764,12 +768,13 @@ function renderSources(stats) {
   }, 400);
 }
 
-function renderCountries(recent) {
-  const cc = {}; recent.forEach(a => { if (a.country && a.country !== 'Unknown') cc[a.country] = (cc[a.country]||0)+1; });
-  const sorted = Object.entries(cc).sort((a,b) => b[1]-a[1]);
-  if (!sorted.length) { document.getElementById('country-container').innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:20px 0">No country signals detected.</div>'; return; }
-  document.getElementById('country-container').innerHTML = `<div class="country-grid stagger">${sorted.map(([n,c]) =>
-    `<div class="country-chip"><span class="country-name">${n}</span><span class="country-count">${c}</span></div>`
+function renderCountries(countries) {
+  // Uses the baked full-corpus country index rather than counting the 30
+  // articles in `recent` — those counts were a sample of a sample and
+  // undercounted every country.
+  if (!countries || !countries.length) { document.getElementById('country-container').innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;padding:20px 0">No country signals detected.</div>'; return; }
+  document.getElementById('country-container').innerHTML = `<div class="country-grid stagger">${countries.map(c =>
+    `<a class="country-chip" href="country.html?c=${encodeURIComponent(c.slug)}"><span class="country-name">${c.country}</span><span class="country-count">${c.count}</span></a>`
   ).join('')}</div>`;
   observe();
 }
@@ -821,7 +826,7 @@ async function init() {
     const d = await fetchJSON('data.json');
     const {stats, topics, escalation: esc, recent} = d;
     renderKPIs(stats,esc); renderBriefing(stats,topics,esc,recent); renderEscalation(esc);
-    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(recent); renderFeed(recent);
+    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(d.countries); renderFeed(recent);
     const updated = new Date(d.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
     document.getElementById('last-update').textContent = `Updated \u00B7 ${updated}`;
   } catch(e) { console.error(e); document.getElementById('last-update').textContent = 'Connection Error'; }

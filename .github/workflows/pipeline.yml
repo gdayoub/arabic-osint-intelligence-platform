@@ -61,6 +61,7 @@ jobs:
       - run: python main.py bake-dashboard --out dist/data.json
 
       - run: cp src/api/static/dashboard.html dist/index.html
+      - run: cp src/api/static/country.html dist/country.html
 
       # Deploys as a Workers-with-static-assets site (wrangler.toml), not
       # classic Pages -- see docs/adr/0008 for why.

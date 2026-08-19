@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Country Intelligence · OSINT Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-base: #07070A; --bg-surface: #0C0C10; --bg-elevated: #141418; --bg-overlay: #1A1A1F;
+  --border-subtle: rgba(255,255,255,0.04); --border-default: rgba(255,255,255,0.07); --border-strong: rgba(255,255,255,0.12);
+  --text-primary: #FFFFFF; --text-secondary: #D4D4D8; --text-tertiary: #A1A1AA; --text-muted: #71717A;
+  --red-glow: rgba(220,38,38,0.15); --red-100: rgba(220,38,38,0.10); --red-200: rgba(220,38,38,0.18);
+  --red-400: #F87171; --red-500: #EF4444; --red-600: #DC2626;
+  --success: #22C55E; --warning: #EAB308; --danger: #DC2626;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html { font-size: 15px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-sans); background: var(--bg-base); color: var(--text-secondary); line-height: 1.6; min-height: 100vh; }
+
+.topbar { position: sticky; top: 0; z-index: 50; background: rgba(7,7,10,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-subtle); }
+.topbar-inner { max-width: 1240px; margin: 0 auto; padding: 14px 28px; display: flex; align-items: center; gap: 14px; }
+.topbar-title { font-size: 0.78rem; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-primary); }
+.topbar-title span { color: var(--red-500); }
+.back-link { margin-left: auto; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; color: var(--text-tertiary); text-decoration: none; border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 6px 12px; transition: all 200ms var(--ease); }
+.back-link:hover { color: var(--text-primary); border-color: var(--border-strong); }
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 40px 28px 80px; }
+
+.hero { margin-bottom: 40px; }
+.hero-eyebrow { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--red-500); margin-bottom: 12px; }
+.hero-title { font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 800; letter-spacing: -0.03em; color: var(--text-primary); line-height: 1.05; }
+.hero-sub { color: var(--text-tertiary); font-size: 0.92rem; margin-top: 10px; }
+
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 40px; }
+.card { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 20px; }
+.kpi-tag { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.12em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
+.kpi-val { font-size: 2rem; font-weight: 750; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1; }
+.kpi-label { font-size: 0.76rem; color: var(--text-tertiary); margin-top: 6px; }
+
+.section { margin-bottom: 44px; }
+.section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle); }
+.section-title { font-size: 1.05rem; font-weight: 650; color: var(--text-primary); letter-spacing: -0.01em; }
+.section-sub { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.chart-wrap { height: 240px; position: relative; }
+
+.feed-item { display: grid; grid-template-columns: 3px 1fr auto; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border-subtle); }
+.feed-esc-bar { border-radius: 2px; background: var(--text-muted); }
+.feed-esc-bar--high { background: var(--danger); } .feed-esc-bar--medium { background: var(--warning); } .feed-esc-bar--low { background: var(--success); }
+.feed-title { font-size: 0.88rem; font-weight: 550; color: var(--text-primary); line-height: 1.4; margin-bottom: 6px; direction: auto; }
+.feed-title a { color: inherit; text-decoration: none; }
+.feed-title a:hover { color: var(--red-400); }
+.feed-title-en { font-size: 0.82rem; color: var(--text-tertiary); line-height: 1.45; margin-bottom: 8px; direction: ltr; text-align: left; font-style: italic; }
+.feed-title-en::before { content: 'EN '; font-style: normal; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.08em; color: var(--text-muted); border: 1px solid var(--border-default); border-radius: 3px; padding: 1px 4px; margin-right: 6px; vertical-align: 1px; }
+.feed-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.feed-tag { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 3px; padding: 2px 7px; }
+.feed-tag--esc-high { color: var(--danger); border-color: var(--red-200); }
+.feed-tag--esc-medium { color: var(--warning); }
+.feed-tag--esc-low { color: var(--success); }
+.feed-source { font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-muted); }
+.feed-time { font-family: var(--font-mono); font-size: 0.64rem; color: var(--text-muted); white-space: nowrap; }
+
+.msg { color: var(--text-muted); padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="topbar"><div class="topbar-inner">
+  <div class="topbar-title">OSINT<span>.</span>CONSOLE</div>
+  <a class="back-link" href="index.html">&larr; ALL COUNTRIES</a>
+</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="hero-eyebrow" id="eyebrow">Country Intelligence</div>
+    <h1 class="hero-title" id="country-name">Loading…</h1>
+    <div class="hero-sub" id="country-sub"></div>
+  </div>
+
+  <div class="kpi-row" id="kpi-row"></div>
+
+  <div class="section">
+    <div class="section-head"><div class="section-title">Signal Breakdown</div><div class="section-sub">Topics &amp; Escalation</div></div>
+    <div class="grid-2">
+      <div class="card"><div class="chart-wrap"><canvas id="c-topics"></canvas></div></div>
+      <div class="card"><div class="chart-wrap"><canvas id="c-esc"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><div class="section-title">Coverage</div><div class="section-sub">Articles</div></div>
+    <div id="feed"></div>
+  </div>
+</div>
+
+<script>
+const TOPIC_COLOR = { Politics:'#DC2626', Military:'#F87171', Economy:'#71717A', Humanitarian:'#EAB308', Protests:'#F97316', Sports:'#3B82F6', Uncategorized:'#52525B' };
+const ESC_COLOR = { high:'#DC2626', medium:'#EAB308', low:'#22C55E' };
+
+Chart.defaults.color = '#A1A1AA';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.03)';
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.plugins.legend.display = false;
+
+// Escapes text before it goes into innerHTML. Titles come from scraped
+// third-party pages, so treating them as trusted markup would let a crafted
+// headline inject script into this page.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function slugFromQuery() {
+  return new URLSearchParams(location.search).get('c') || '';
+}
+
+function renderKPIs(d) {
+  const high = d.escalation?.high || 0;
+  const topTopic = d.topics?.[0];
+  const items = [
+    { tag:'COVERAGE', val:d.total, label:'Articles' },
+    { tag:'HIGH ALERT', val:high, label:'High Escalation' },
+    { tag:'SOURCES', val:Object.keys(d.sources || {}).length, label:'Reporting Sources' },
+    { tag:'TOP SIGNAL', val:topTopic?.count ?? 0, label:topTopic?.topic || 'N/A' },
+  ];
+  document.getElementById('kpi-row').innerHTML = items.map(k =>
+    `<div class="card"><div class="kpi-tag">${esc(k.tag)}</div><div class="kpi-val">${esc(k.val)}</div><div class="kpi-label">${esc(k.label)}</div></div>`
+  ).join('');
+}
+
+function renderCharts(d) {
+  const topics = d.topics || [];
+  new Chart(document.getElementById('c-topics'), {
+    type: 'bar',
+    data: { labels: topics.map(t => t.topic), datasets: [{ data: topics.map(t => t.count), backgroundColor: topics.map(t => TOPIC_COLOR[t.topic] || '#52525B'), borderRadius: 5, barThickness: 26 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
+  });
+
+  const esc_ = d.escalation || {};
+  new Chart(document.getElementById('c-esc'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(esc_), datasets: [{ data: Object.values(esc_), backgroundColor: Object.keys(esc_).map(k => ESC_COLOR[k] || '#52525B'), borderWidth: 0, spacing: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { display: true, position: 'bottom' } } }
+  });
+}
+
+function renderFeed(articles) {
+  if (!articles.length) { document.getElementById('feed').innerHTML = '<div class="msg">No articles for this country.</div>'; return; }
+  document.getElementById('feed').innerHTML = articles.map(a => {
+    const e = (a.escalation || 'low').toLowerCase();
+    const t = a.published_date ? new Date(a.published_date).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false}) : '';
+    return `<div class="feed-item">
+      <div class="feed-esc-bar feed-esc-bar--${esc(e)}"></div>
+      <div>
+        <div class="feed-title"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a></div>
+        ${a.title_en ? `<div class="feed-title-en">${esc(a.title_en)}</div>` : ''}
+        <div class="feed-meta">
+          <span class="feed-tag feed-tag--esc-${esc(e)}">${esc(e)}</span>
+          <span class="feed-tag">${esc(a.topic || 'N/A')}</span>
+          <span class="feed-source">${esc(a.source)}</span>
+        </div>
+      </div>
+      <div class="feed-time">${esc(t)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function init() {
+  const slug = slugFromQuery();
+  if (!slug) { document.getElementById('country-name').textContent = 'No country selected'; return; }
+
+  try {
+    const r = await fetch(`countries/${encodeURIComponent(slug)}.json`);
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+
+    document.title = `${d.country} · OSINT Console`;
+    document.getElementById('country-name').textContent = d.country;
+    const updated = new Date(d.generated_at).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false});
+    document.getElementById('country-sub').textContent = `${d.total} articles · updated ${updated}`;
+
+    renderKPIs(d); renderCharts(d); renderFeed(d.articles || []);
+  } catch (e) {
+    console.error(e);
+    document.getElementById('country-name').textContent = 'Country not found';
+    document.getElementById('country-sub').textContent = 'No data has been collected for this country yet.';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from scripts.bake_dashboard_data import bake, write_data_json
+from scripts.bake_dashboard_data import bake, bake_country_pages, country_slug, write_data_json
 from src.store.provenance import create_document, record_document_fact, register_extractor_version
 
 
@@ -104,3 +104,63 @@ def test_bake_total_processed_excludes_documents_without_topic_fact(session, ont
     assert data["stats"]["total_raw"] == 1
     assert data["stats"]["total_processed"] == 0
     assert data["recent"][0]["topic"] is None
+
+
+def test_country_slug_is_url_safe():
+    assert country_slug("Saudi Arabia") == "saudi-arabia"
+    assert country_slug("United Kingdom") == "united-kingdom"
+    assert country_slug("Egypt") == "egypt"
+
+
+def test_bake_country_pages_groups_documents_by_country(session, ontology, blob_store):
+    extractor = register_extractor_version(session, "test", "1.0.0")
+    for i in range(3):
+        _seed_document(
+            session, ontology, blob_store, extractor,
+            url=f"https://example.com/sy-{i}", body=f"نص {i}", title=f"عنوان سوريا {i}",
+            topic="Military", escalation="high", country="Syria",
+        )
+    _seed_document(
+        session, ontology, blob_store, extractor,
+        url="https://example.com/eg-1", body="نص", title="عنوان مصر",
+        topic="Politics", escalation="low", country="Egypt",
+    )
+    session.commit()
+
+    pages = bake_country_pages(session)
+
+    assert set(pages) == {"Syria", "Egypt"}
+    assert pages["Syria"]["total"] == 3
+    assert pages["Syria"]["slug"] == "syria"
+    assert pages["Syria"]["escalation"] == {"high": 3}
+    assert pages["Syria"]["topics"] == [{"topic": "Military", "count": 3}]
+    assert pages["Egypt"]["total"] == 1
+
+
+def test_country_page_articles_never_include_body_text(session, ontology, blob_store):
+    """Same public-bucket boundary as data.json — country pages are served
+    from the same static origin."""
+    extractor = register_extractor_version(session, "test", "1.0.0")
+    secret = "تفاصيل لا يجب أن تظهر"
+    _seed_document(
+        session, ontology, blob_store, extractor,
+        url="https://example.com/leak", body=f"مقدمة {secret} خاتمة", title="عنوان",
+        topic="Politics", escalation="low", country="Iraq",
+    )
+    session.commit()
+
+    serialized = json.dumps(bake_country_pages(session), ensure_ascii=False)
+
+    assert secret not in serialized
+
+
+def test_documents_without_a_country_produce_no_page(session, ontology, blob_store):
+    extractor = register_extractor_version(session, "test", "1.0.0")
+    _seed_document(
+        session, ontology, blob_store, extractor,
+        url="https://example.com/nocountry", body="نص", title="عنوان",
+        topic="Economy", escalation="low", country=None,
+    )
+    session.commit()
+
+    assert bake_country_pages(session) == {}
