@@ -48,6 +48,10 @@ jobs:
 
       - run: python main.py process-core
 
+      # gazetteer only. the transformer scored 0.89 against this 0.90 and
+      # costs 2GB plus minutes of CI. see benchmarks/results.md.
+      - run: python main.py extract-core
+
       # Skipped cleanly when DEEPL_API_KEY isn't configured, and never fails
       # the run: a spent quota or a DeepL outage should cost English titles,
       # not the whole pipeline. The dashboard renders Arabic either way.

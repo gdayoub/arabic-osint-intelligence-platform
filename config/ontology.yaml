@@ -52,3 +52,9 @@ document_attributes:
   - {name: topic, type: text}
   - {name: escalation, type: enum, values: [high, medium, low]}
   - {name: country, type: text}
+  # written by src/pipeline/extract_core.py after it scans a document. the
+  # value is how many mentions were found. it doubles as the marker saying
+  # this document has been through extraction at this extractor version,
+  # which matters because a document can legitimately have zero mentions
+  # and I need to tell that apart from not scanned yet.
+  - {name: mentions_extracted, type: integer}

@@ -13,6 +13,7 @@ from src.database.db import init_db
 from src.pipeline.ingest_pipeline import run_ingestion
 from src.pipeline.process_pipeline import run_processing
 from scripts.bake_dashboard_data import run_bake
+from src.pipeline.extract_core import run_core_extraction
 from src.pipeline.ingest_core import run_core_ingestion
 from src.pipeline.process_core import run_core_processing
 from src.pipeline.retract_mojibake import run_retract_mojibake
@@ -37,6 +38,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("process-core", help="Run topic/escalation/country classifiers over core-schema documents (M1.5)")
     ingest_core_parser = sub.add_parser("ingest-core", help="Scrape sources and write documents to the core schema (M1.5)")
     ingest_core_parser.add_argument("--limit-per-source", type=int, default=None)
+
+    extract_parser = sub.add_parser("extract-core", help="Extract entity mentions from core-schema documents (M3)")
+    extract_parser.add_argument("--limit", type=int, default=500)
 
     translate_parser = sub.add_parser("translate-core", help="Translate recent document titles AR->EN via DeepL (M5)")
     translate_parser.add_argument("--document-limit", type=int, default=200)
@@ -82,6 +86,12 @@ def main() -> None:
         print(f"attempted={stats.attempted} inserted={stats.inserted} skipped_existing={stats.skipped_existing}")
         for source, info in stats.sources.items():
             print(f"  {source}: {info}")
+    elif args.command == "extract-core":
+        stats = run_core_extraction(limit=args.limit)
+        print(
+            f"scanned={stats.documents_scanned} processed={stats.documents_processed} "
+            f"mentions={stats.mentions_written} errors={stats.errors}"
+        )
     elif args.command == "translate-core":
         stats = run_core_translation(document_limit=args.document_limit, max_new=args.max_new)
         print(
