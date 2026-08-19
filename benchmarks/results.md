@@ -149,3 +149,60 @@ features correctly learned weights near zero, and AUC fell to a believable
 keys already overlapping, extra raw string similarity is mild evidence of a
 *confusable* pair — حسن vs حسين scores 0.933 while the same-person pair
 بشار الأسد vs بشار الاسد scores 0.96. The model learned that trap.
+
+## 2026-08-19 — M4 resolution against the live corpus
+
+Three production runs, because the first two were wrong and the numbers said
+so before any test did.
+
+| run | mentions | entities | singletons | splits | what happened |
+|---|---|---|---|---|---|
+| 1 | 5,449 | 3,769 | 3,704 | 29 | broken |
+| 2 | 5,452 | 87 | 85 | 0 | better, still under-merging |
+| 3 | 5,486 | **60** | — | 0 | correct |
+
+**Run 1: the block size guard was eating the corpus.** `إيران` appears 476
+times. All 476 normalize identically, so blocking put them in one block, the
+block exceeded `max_block_size=100`, and it was dropped as oversized. The
+guard built to prevent quadratic blowup was discarding precisely the
+entities that matter most, and the top of every column came out as hundreds
+of singletons. Fix: collapse byte-identical normalized strings *before*
+blocking. Two mentions of the same type with identical normalized text are
+the same thing and need no model to say so. 5,452 mentions collapse to 89
+distinct surface forms, blocks shrink to a handful of members, nothing is
+dropped.
+
+**Run 2: rediscovering what was already in the config.** ترامب, ترمب,
+دونالد ترامب and دونالد ترمب stayed four separate entities. ترامب and ترمب
+differ by an alef so they share no trigrams and their blocking keys barely
+overlap — the scorer had no way to join them. Meanwhile
+`config/gazetteer.yaml` already declares all four to be aliases of one
+person, and `extract()` was throwing that away. Resolution now groups by the
+gazetteer's canonical when it has one, scorer otherwise. Same dictionary vs
+model split as M3.
+
+**Run 3, live now:** 5,486 mentions → **60 entities**.
+
+```
+589  دونالد ترامب      [4 forms] ترامب, ترمب, دونالد ترامب, دونالد ترمب
+160  بنيامين نتنياهو   [2 forms] بنيامين نتنياهو, نتنياهو
+135  بشار الأسد        [2 forms] الأسد, بشار الأسد
+292  قطاع غزة          [2 forms] غزة, قطاع غزة
+```
+
+**Showing the merged surface forms on the dashboard paid for itself
+immediately.** It exposed two things a count alone would have hidden:
+`مجلس الأمن` (Security Council) was listed as an alias of `الأمم المتحدة`
+and had merged two different organizations, and the canonical name
+heuristic was labelling Khamenei `المرشد الأعلى` — a job title — because it
+preferred surface frequency over the name the dictionary had deliberately
+chosen. Both fixed.
+
+**Honest reading: the learned scorer contributed nothing here.** Run 3
+matched 0 pairs. Every merge came from exact-duplicate collapsing and a
+dictionary lookup, neither of which is machine learning. That is the correct
+order of operations — cheap deterministic signals first — but the scorer
+does not earn its keep until it handles names the gazetteer does not know,
+and that needs a training set drawn from blocking-surviving pairs rather
+than the arbitrary name pairs it was fit on. 17 of 24 current negatives
+never survive blocking, so the model was graded on an exam it never sits.

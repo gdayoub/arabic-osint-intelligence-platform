@@ -30,7 +30,12 @@ person:
 organization:
   حزب الله: []
   حماس: [حركة حماس]
-  الأمم المتحدة: [مجلس الأمن]
+  الأمم المتحدة: []
+  # مجلس الأمن used to sit here as an alias of الأمم المتحدة. it is a body
+  # inside the UN and not another name for it, so that merged two different
+  # organizations into one entity. the dashboard showing merged surface
+  # forms is what made it visible.
+  مجلس الأمن: [مجلس الأمن الدولي]
   الوكالة الدولية للطاقة الذرية: []
   حلف شمال الأطلسي: [الناتو]
   الاتحاد الأوروبي: []

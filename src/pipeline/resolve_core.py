@@ -108,14 +108,25 @@ def load_mention_contexts(session: Session, adapter: ArabicAdapter) -> dict[int,
     return contexts
 
 
-def pick_canonical_name(members: list[int], raw_text: dict[int, str]) -> str:
+def pick_canonical_name(
+    members: list[int], raw_text: dict[int, str], gazetteer_name: str | None = None
+) -> str:
     """decide what to call the merged entity.
 
-    more tokens wins first. the full name is a better label than the short
-    form even when the short form appears more often, because a reader
+    if the gazetteer named this thing I use its name and stop. it picked
+    علي خامنئي as the canonical form and my frequency heuristic was
+    overriding that with المرشد الأعلى, which is a job title and not a name.
+    the dictionary already made this call deliberately and second guessing
+    it with a word count was worse.
+
+    for everything else, more tokens wins first. the full name beats the
+    short form even when the short form is more common, because a reader
     seeing الأسد cannot tell which one it is while بشار الأسد is
     unambiguous. frequency only breaks ties between forms of equal length.
     """
+    if gazetteer_name:
+        return gazetteer_name
+
     counts = Counter(raw_text[m] for m in members)
     return max(counts, key=lambda name: (len(name.split()), counts[name], len(name)))
 
@@ -199,6 +210,13 @@ def resolve_all(
         groups[key].append(mention_id)
 
     representatives = {members[0]: members for members in groups.values()}
+    # remember which groups the dictionary named so the entity keeps that
+    # name instead of one derived from surface frequency
+    gazetteer_names = {
+        members[0]: key[1]
+        for key, members in groups.items()
+        if gazetteer and gazetteer.canonical_for(contexts[members[0]].normalized_name) == key
+    }
     stats.exact_duplicate_groups = len(representatives)
 
     # block first. a pair that shares no key never gets scored.
@@ -258,7 +276,9 @@ def resolve_all(
         entity = create_entity(
             session,
             object_type=contexts[members[0]].object_type,
-            canonical_name=pick_canonical_name(members, raw_text),
+            canonical_name=pick_canonical_name(
+                members, raw_text, gazetteer_names.get(representative_cluster[0])
+            ),
             properties={
                 "mention_count": len(members),
                 "surface_forms": sorted({raw_text[m] for m in members}),
