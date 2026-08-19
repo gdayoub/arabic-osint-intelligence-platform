@@ -17,6 +17,35 @@ from src.config.settings import SETTINGS, Settings
 from src.scraping.scraper_utils import ArticleRecord, canonicalize_url
 
 
+def _resolve_encoding(response: requests.Response) -> str:
+    """Decide how to decode a response body.
+
+    This used to be `response.apparent_encoding or response.encoding or
+    "utf-8"`, which put a statistical guess ahead of everything else.
+    chardet reads Arabic UTF-8 as windows-1251 often enough that real CNN
+    Arabic headlines were being stored as Cyrillic mojibake
+    ("ШҘЩҠШұШ§ЩҶ..."), then faithfully translated into nonsense downstream.
+
+    Order of trust instead:
+      1. An explicit charset in the Content-Type header — authoritative.
+         (requests silently substitutes ISO-8859-1 when the header has no
+         charset at all, so that specific value is treated as "absent".)
+      2. UTF-8, if the bytes actually decode as UTF-8. Arbitrary non-UTF-8
+         bytes almost never decode cleanly, so a successful decode is
+         strong evidence, and every modern Arabic news site serves UTF-8.
+      3. Statistical detection, only once the first two have failed.
+    """
+    declared = requests.utils.get_encoding_from_headers(response.headers)
+    if declared and declared.lower() not in ("iso-8859-1", "latin-1"):
+        return declared
+
+    try:
+        response.content.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        return response.apparent_encoding or "utf-8"
+
+
 class BaseScraper(ABC):
     """Abstract base class for Arabic source scrapers.
 
@@ -76,7 +105,7 @@ class BaseScraper(ABC):
                 )
                 return None, status_code, final_url
 
-            response.encoding = response.apparent_encoding or response.encoding or "utf-8"
+            response.encoding = _resolve_encoding(response)
             return response.text, status_code, final_url
         except Exception as exc:
             self.logger.warning("Failed to fetch URL %s | %s", url, exc)

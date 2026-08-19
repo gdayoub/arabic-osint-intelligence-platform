@@ -15,6 +15,7 @@ from src.pipeline.process_pipeline import run_processing
 from scripts.bake_dashboard_data import run_bake
 from src.pipeline.ingest_core import run_core_ingestion
 from src.pipeline.process_core import run_core_processing
+from src.pipeline.retract_mojibake import run_retract_mojibake
 from src.pipeline.translate_core import run_core_translation
 from src.pipeline.run_pipeline import run_full_pipeline
 from src.store.blob import get_blob_store
@@ -40,6 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
     translate_parser = sub.add_parser("translate-core", help="Translate recent document titles AR->EN via DeepL (M5)")
     translate_parser.add_argument("--document-limit", type=int, default=200)
     translate_parser.add_argument("--max-new", type=int, default=None, help="Cap uncached strings sent to the API this run")
+
+    mojibake_parser = sub.add_parser("retract-mojibake", help="Retract documents stored with a broken character encoding")
+    mojibake_parser.add_argument("--apply", action="store_true", help="Actually retract; omit for a dry run")
 
     bake_parser = sub.add_parser("bake-dashboard", help="Write a static data.json snapshot for the Pages dashboard (M1.5)")
     bake_parser.add_argument("--out", type=str, default="dist/data.json")
@@ -84,6 +88,10 @@ def main() -> None:
             f"titles_seen={stats.titles_seen} already_cached={stats.already_cached} "
             f"newly_translated={stats.newly_translated}"
         )
+    elif args.command == "retract-mojibake":
+        stats = run_retract_mojibake(dry_run=not args.apply)
+        mode = "RETRACTED" if args.apply else "DRY RUN (use --apply to retract)"
+        print(f"{mode}: scanned={stats.scanned} corrupted={stats.retracted} ids={stats.document_ids}")
     elif args.command == "bake-dashboard":
         data = run_bake(Path(args.out), recent_limit=args.recent_limit)
         print(f"wrote {args.out}: total_raw={data['stats']['total_raw']} total_processed={data['stats']['total_processed']} recent={len(data['recent'])}")
