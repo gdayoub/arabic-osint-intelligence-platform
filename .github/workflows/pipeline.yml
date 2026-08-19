@@ -25,6 +25,7 @@ jobs:
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +47,16 @@ jobs:
       - run: python main.py ingest-core
 
       - run: python main.py process-core
+
+      # Skipped cleanly when DEEPL_API_KEY isn't configured, and never fails
+      # the run: a spent quota or a DeepL outage should cost English titles,
+      # not the whole pipeline. The dashboard renders Arabic either way.
+      - name: Translate titles (optional)
+        # env, not secrets: the secrets context isn't reliably available in
+        # step-level `if`, but the job env above already carries the value.
+        if: env.DEEPL_API_KEY != ''
+        continue-on-error: true
+        run: python main.py translate-core
 
       - run: python main.py bake-dashboard --out dist/data.json
 

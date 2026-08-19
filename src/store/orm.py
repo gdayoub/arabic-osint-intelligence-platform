@@ -139,6 +139,32 @@ class FactORM(CoreBase):
     retracted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class TranslationORM(CoreBase):
+    """Machine translation cache, keyed by a hash of the SOURCE TEXT rather
+    than by whatever object needed it translated.
+
+    Content-addressing is what makes this cheap and durable: identical text
+    is translated once no matter how many documents carry it (syndicated
+    wire copy is common), and the cache survives entity merges, document
+    retraction, and reprocessing, because it was never tied to a row id in
+    the first place. See docs/adr/0012-translation-cache.md.
+    """
+
+    __tablename__ = "translations"
+    __table_args__ = (
+        UniqueConstraint("source_sha256", "target_lang", name="uq_translation_source_target"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    source_lang: Mapped[str] = mapped_column(String(8))
+    target_lang: Mapped[str] = mapped_column(String(8))
+    source_text: Mapped[str] = mapped_column(Text)
+    translated_text: Mapped[str] = mapped_column(Text)
+    extractor_version_id: Mapped[int] = mapped_column(ForeignKey("extractor_versions.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ProvenanceORM(CoreBase):
     __tablename__ = "provenance"
 

@@ -1,0 +1,340 @@
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch less than a minute ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch less than a minute ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch less than a minute ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 1 minute ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 1 minute ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 1 minute ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 1 minute ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 2 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 2 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 2 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 2 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 3 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 3 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 3 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 3 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  * Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 4 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  ✓ Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4
+Refreshing run status every 15 seconds. Press Ctrl+C to quit.
+
+* main OSINT Pipeline · 32214406374
+Triggered via workflow_dispatch about 4 minutes ago
+
+JOBS
+* run (ID 95953109252)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-python@v5
+  ✓ Run pip install -r requirements.txt
+  ✓ Run python -m pytest tests/unit -q
+  ✓ Run python main.py init-core-db
+  ✓ Run python main.py ingest-core
+  * Run python main.py process-core
+  * Run python main.py bake-dashboard --out dist/data.json
+  * Run cp src/api/static/dashboard.html dist/index.html
+  * Deploy dashboard
+  * Post Run actions/setup-python@v5
+  * Post Run actions/checkout@v4

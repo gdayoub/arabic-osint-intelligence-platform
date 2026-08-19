@@ -56,6 +56,10 @@ class Settings:
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
 
+    # Machine translation (M5). Free-tier DeepL keys end in ":fx".
+    deepl_api_key: str | None = None
+    max_translations_per_run: int = 200
+
     @property
     def database_url(self) -> str:
         """Build SQLAlchemy connection URL for PostgreSQL."""
@@ -143,6 +147,8 @@ class Settings:
             r2_bucket=os.getenv("R2_BUCKET"),
             r2_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
             r2_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
+            deepl_api_key=os.getenv("DEEPL_API_KEY"),
+            max_translations_per_run=int(os.getenv("MAX_TRANSLATIONS_PER_RUN", "200")),
         )
 
 

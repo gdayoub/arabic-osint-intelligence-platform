@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from src.store.database import get_core_session
 from src.store.orm import DocumentORM, FactORM
+from src.store.translations import get_cached
 
 RECENT_LIMIT_DEFAULT = 30
 DAILY_WINDOW_DAYS = 30
@@ -97,9 +98,16 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
         .limit(recent_limit)
     ).all()
 
+    # One lookup for every title on the page rather than per-row queries.
+    # Missing translations are expected and fine — the UI shows Arabic
+    # regardless and only offers a toggle when an English version exists.
+    recent_titles = [title_by_doc.get(doc.id) for doc in recent_rows]
+    translations = get_cached(session, [t for t in recent_titles if t])
+
     recent = [
         {
             "title": title_by_doc.get(doc.id) or "(untitled)",
+            "title_en": translations.get(title_by_doc.get(doc.id) or ""),
             "source": doc.source,
             "url": doc.url,
             "topic": topic_by_doc.get(doc.id),

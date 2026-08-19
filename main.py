@@ -15,6 +15,7 @@ from src.pipeline.process_pipeline import run_processing
 from scripts.bake_dashboard_data import run_bake
 from src.pipeline.ingest_core import run_core_ingestion
 from src.pipeline.process_core import run_core_processing
+from src.pipeline.translate_core import run_core_translation
 from src.pipeline.run_pipeline import run_full_pipeline
 from src.store.blob import get_blob_store
 from src.store.database import get_core_session, init_core_db
@@ -35,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("process-core", help="Run topic/escalation/country classifiers over core-schema documents (M1.5)")
     ingest_core_parser = sub.add_parser("ingest-core", help="Scrape sources and write documents to the core schema (M1.5)")
     ingest_core_parser.add_argument("--limit-per-source", type=int, default=None)
+
+    translate_parser = sub.add_parser("translate-core", help="Translate recent document titles AR->EN via DeepL (M5)")
+    translate_parser.add_argument("--document-limit", type=int, default=200)
+    translate_parser.add_argument("--max-new", type=int, default=None, help="Cap uncached strings sent to the API this run")
 
     bake_parser = sub.add_parser("bake-dashboard", help="Write a static data.json snapshot for the Pages dashboard (M1.5)")
     bake_parser.add_argument("--out", type=str, default="dist/data.json")
@@ -73,6 +78,12 @@ def main() -> None:
         print(f"attempted={stats.attempted} inserted={stats.inserted} skipped_existing={stats.skipped_existing}")
         for source, info in stats.sources.items():
             print(f"  {source}: {info}")
+    elif args.command == "translate-core":
+        stats = run_core_translation(document_limit=args.document_limit, max_new=args.max_new)
+        print(
+            f"titles_seen={stats.titles_seen} already_cached={stats.already_cached} "
+            f"newly_translated={stats.newly_translated}"
+        )
     elif args.command == "bake-dashboard":
         data = run_bake(Path(args.out), recent_limit=args.recent_limit)
         print(f"wrote {args.out}: total_raw={data['stats']['total_raw']} total_processed={data['stats']['total_processed']} recent={len(data['recent'])}")
