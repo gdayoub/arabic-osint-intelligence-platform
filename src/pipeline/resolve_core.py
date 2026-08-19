@@ -54,6 +54,7 @@ class ResolveStats:
     entities_created: int = 0
     entities_retracted: int = 0
     giant_components_split: int = 0
+    exact_duplicate_groups: int = 0
     size_histogram: dict[int, int] = field(default_factory=dict)
 
     @property
@@ -155,9 +156,34 @@ def resolve_all(
     }
     raw_text = {mid: row.text for mid, row in mention_rows.items()}
 
+    # collapse exact duplicates BEFORE blocking. this turned out to matter a
+    # lot and I missed it on the first pass.
+    #
+    # إيران appears 476 times in the corpus. every one of those mentions
+    # normalizes to the same string, so blocking put all 476 in one block,
+    # the block blew past max_block_size, and the whole thing got dropped as
+    # oversized. the most mentioned entities in the corpus were the ones
+    # most likely to be skipped entirely, and they came out as 476 separate
+    # singleton entities. the first production run produced 3704 singletons
+    # out of 3769 entities for exactly this reason.
+    #
+    # two mentions of the same type whose normalized text is byte identical
+    # are the same thing. that needs no model and no threshold. so I group
+    # them up front, run the expensive machinery on ONE representative per
+    # distinct surface form, and expand back at the end. blocks shrink from
+    # hundreds of members to a handful and nothing gets dropped.
+    groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for mention_id, context in contexts.items():
+        groups[(context.object_type, context.normalized_name)].append(mention_id)
+
+    representatives = {members[0]: members for members in groups.values()}
+    stats.exact_duplicate_groups = len(representatives)
+
     # block first. a pair that shares no key never gets scored.
     blocker = KeyBlocker(max_block_size=max_block_size)
-    candidates = blocker.candidate_pairs({mid: set(c.blocking_keys) for mid, c in contexts.items()})
+    candidates = blocker.candidate_pairs(
+        {mid: set(contexts[mid].blocking_keys) for mid in representatives}
+    )
     stats.candidate_pairs = len(candidates)
     stats.full_pairs = blocker.last_stats.full_pairs
 
@@ -180,7 +206,7 @@ def resolve_all(
         return scores.get(tuple(sorted((x, y))), 0.0)
 
     result = cluster_pairs(
-        contexts.keys(),
+        representatives.keys(),
         matched,
         similarity=similarity,
         threshold=scorer.weights.threshold,
@@ -203,7 +229,10 @@ def resolve_all(
         row.retracted_reason = f"superseded by {EXTRACTOR_NAME} v{EXTRACTOR_VERSION}"
     stats.entities_retracted = len(previous)
 
-    for members in result.clusters:
+    for representative_cluster in result.clusters:
+        # expand each representative back into every mention that shared its
+        # exact normalized form
+        members = [m for rep in representative_cluster for m in representatives[rep]]
         entity = create_entity(
             session,
             object_type=contexts[members[0]].object_type,

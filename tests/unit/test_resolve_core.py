@@ -180,3 +180,34 @@ def test_context_excludes_the_mention_itself(session, ontology, blob_store):
     contexts = load_mention_contexts(session, ar)
     first = list(contexts.values())[0]
     assert first.normalized_name not in first.co_mentions
+
+
+def test_a_name_more_frequent_than_the_block_cap_still_resolves(session, ontology, blob_store):
+    """the bug the first production run exposed.
+
+    إيران appeared 476 times. all 476 normalized identically so blocking put
+    them in one block, the block exceeded max_block_size, it was dropped as
+    oversized, and the single most mentioned entity in the corpus came out as
+    476 separate singletons. collapsing exact duplicates before blocking is
+    what fixes it: identical strings of the same type need no model to merge.
+    """
+    extractor = register_extractor_version(session, "gazetteer_extractor", "1.0.0")
+    for i in range(40):
+        text = "الوضع في إيران اليوم"
+        document = create_document(
+            session, source="s", text=text, content_hash=f"iran-{i}",
+            blob_store=blob_store, url=f"https://example.com/iran-{i}",
+        )
+        create_mention(session, document, "إيران", 9, 14, "location", extractor, ontology)
+    session.flush()
+
+    # a cap far below the number of mentions. before the fix this dropped the
+    # block and produced 40 singletons.
+    stats = resolve_all(session, ontology, max_block_size=5)
+
+    assert stats.mentions == 40
+    assert stats.exact_duplicate_groups == 1, "40 identical strings are one distinct form"
+    assert stats.entities_created == 1, "must be one entity, not 40 singletons"
+
+    entity = session.scalar(select(EntityORM).where(EntityORM.retracted.is_(False)))
+    assert entity.properties["mention_count"] == 40

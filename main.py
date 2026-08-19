@@ -99,7 +99,8 @@ def main() -> None:
     elif args.command == "resolve-core":
         stats = run_core_resolution(max_block_size=args.max_block_size)
         print(
-            f"mentions={stats.mentions} candidate_pairs={stats.candidate_pairs} "
+            f"mentions={stats.mentions} distinct_forms={stats.exact_duplicate_groups} "
+            f"candidate_pairs={stats.candidate_pairs} "
             f"(reduction {stats.reduction_ratio:.4f}) matched={stats.matched_pairs} "
             f"entities={stats.entities_created} retracted={stats.entities_retracted} "
             f"split={stats.giant_components_split}"
