@@ -24,14 +24,14 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.core.models import Document, ExtractorVersion
+from src.core.models import Document, ExtractorVersion, Fact
 from src.core.ontology import Ontology
 from src.extract.base import MentionExtractor
 from src.extract.gazetteer import GazetteerExtractor
 from src.store.blob import BlobStore, get_blob_store
 from src.store.database import get_core_session
 from src.store.documents import load_document
-from src.store.orm import DocumentORM, ExtractorVersionORM, FactORM
+from src.store.orm import DocumentORM, ExtractorVersionORM, FactORM, MentionORM
 from src.store.provenance import create_mention, record_document_fact, register_extractor_version
 
 logger = logging.getLogger("pipeline.extract_core")
@@ -49,6 +49,62 @@ class ExtractCoreStats:
     documents_processed: int = 0
     mentions_written: int = 0
     errors: int = 0
+
+
+def _as_fact(row: FactORM) -> Fact:
+    """Convert an extraction marker row into the core fact value."""
+    return Fact(
+        id=row.id,
+        fact_type=row.fact_type,
+        subject_table=row.subject_table,
+        subject_id=row.subject_id,
+        payload=row.payload,
+        extractor_version_id=row.extractor_version_id,
+        supersedes_id=row.supersedes_id,
+        retracted=row.retracted,
+    )
+
+
+def _live_mentions_for_extractor(
+    session: Session, document_id: int, extractor_name: str
+) -> list[MentionORM]:
+    """All live mention rows owned by one extractor across its versions."""
+    stmt = (
+        select(MentionORM)
+        .join(
+            ExtractorVersionORM,
+            MentionORM.extractor_version_id == ExtractorVersionORM.id,
+        )
+        .where(
+            MentionORM.document_id == document_id,
+            MentionORM.retracted.is_(False),
+            ExtractorVersionORM.name == extractor_name,
+        )
+        .order_by(MentionORM.created_at.asc(), MentionORM.id.asc())
+    )
+    return list(session.scalars(stmt))
+
+
+def _live_markers_for_extractor(
+    session: Session, document_id: int, extractor_name: str
+) -> list[FactORM]:
+    """All live completion markers owned by one extractor across versions."""
+    stmt = (
+        select(FactORM)
+        .join(
+            ExtractorVersionORM,
+            FactORM.extractor_version_id == ExtractorVersionORM.id,
+        )
+        .where(
+            FactORM.subject_table == "documents",
+            FactORM.subject_id == document_id,
+            FactORM.fact_type == EXTRACTION_MARKER,
+            FactORM.retracted.is_(False),
+            ExtractorVersionORM.name == extractor_name,
+        )
+        .order_by(FactORM.created_at.asc(), FactORM.id.asc())
+    )
+    return list(session.scalars(stmt))
 
 
 def _documents_needing_extraction(
@@ -95,33 +151,64 @@ def extract_one_document(
     extractor_version: ExtractorVersion,
     ontology: Ontology,
 ) -> int:
-    """extract from one document and write the mentions. returns the count.
+    """Atomically replace one extractor's live mention generation.
 
     create_mention re-checks that document.text[start:end] equals the
     mention text and raises if it does not. that check is the whole reason
     the alignment work in M2 had to be right. if the offsets were wrong this
     is where it would blow up rather than quietly storing garbage.
-    """
-    written = 0
-    for mention in extractor.extract(document.text):
-        create_mention(
-            session,
-            document=document,
-            text=mention.text,
-            start=mention.start,
-            end=mention.end,
-            object_type=mention.object_type,
-            extractor_version=extractor_version,
-            ontology=ontology,
-        )
-        written += 1
 
-    # the marker goes last so a crash mid document leaves it unset and the
-    # document stays eligible next run instead of looking finished with
-    # half its mentions written
-    record_document_fact(
-        session, document, EXTRACTION_MARKER, written, extractor_version, ontology
-    )
+    The nested transaction is a database savepoint. A bad span or failed
+    provenance write rolls back every new row for this document and restores
+    the prior live generation. A successful run retires prior versions from
+    this extractor name, while mention generations from other extractors can
+    still coexist intentionally.
+    """
+    with session.begin_nested():
+        prior_mentions = _live_mentions_for_extractor(
+            session, document.id, extractor_version.name
+        )
+        prior_markers = _live_markers_for_extractor(
+            session, document.id, extractor_version.name
+        )
+        prior_marker = _as_fact(prior_markers[-1]) if prior_markers else None
+
+        written = 0
+        for mention in extractor.extract(document.text):
+            create_mention(
+                session,
+                document=document,
+                text=mention.text,
+                start=mention.start,
+                end=mention.end,
+                object_type=mention.object_type,
+                extractor_version=extractor_version,
+                ontology=ontology,
+            )
+            written += 1
+
+        # The marker goes last. It is also linked to the previous marker so
+        # history stays navigable after the old generation stops being live.
+        record_document_fact(
+            session,
+            document,
+            EXTRACTION_MARKER,
+            written,
+            extractor_version,
+            ontology,
+            supersedes=prior_marker,
+        )
+
+        # Validate the replacement and all provenance before switching the
+        # live generation. Both these updates and the inserts are still inside
+        # the same savepoint.
+        session.flush()
+        for row in prior_mentions:
+            row.retracted = True
+        for row in prior_markers:
+            row.retracted = True
+        session.flush()
+
     return written
 
 

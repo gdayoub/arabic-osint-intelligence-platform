@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.core.models import ExtractorVersion
+from src.core.models import ExtractorVersion, Fact
 from src.core.ontology import Ontology
 from src.processing.country_detection import detect_country
 from src.processing.escalation_scoring import score_escalation
@@ -29,18 +29,19 @@ from src.processing.keyword_classifier import KeywordTopicClassifier
 from src.store.blob import BlobStore, get_blob_store
 from src.store.database import get_core_session
 from src.store.documents import load_document
-from src.core.models import Fact
 from src.store.orm import DocumentORM, ExtractorVersionORM, FactORM
 from src.store.provenance import record_document_fact, register_extractor_version
 
 EXTRACTOR_NAME = "rule_based_document_classifier"
 # 2.0.0 (major): country detection changed from first-keyword-match-wins to
-# occurrence counting over a larger, boundary-aware gazetteer, and a Sports
-# topic was added. Both change what labels existing documents get, so this
-# is a breaking behavior change, not an addition — which is exactly what P4
-# versioning is for: bumping it makes every fact written by 1.0.0
-# identifiable and re-processable (see _documents_needing_processing).
-EXTRACTOR_VERSION = "2.0.0"
+# occurrence counting over a larger, boundary-aware gazetteer, and Sports was
+# added as a topic. Those changes altered classifier output.
+# 2.0.1 (patch): per-document writes became atomic replacement generations,
+# and an undetected country now produces an explicit null leaf. The bump is
+# required even though classifier rules did not change: existing 2.0.0 rows
+# must be selected once so stale country leaves and duplicate live generations
+# are repaired by the new persistence behavior.
+EXTRACTOR_VERSION = "2.0.1"
 
 # Fact types this pipeline owns. Used to supersede prior values on
 # reprocessing rather than mutating them (P5).
@@ -54,6 +55,20 @@ class ProcessCoreStats:
     scanned: int = 0
     processed: int = 0
     errors: int = 0
+
+
+def _as_fact(row: FactORM) -> Fact:
+    """Convert the persistence row used here into the core fact value."""
+    return Fact(
+        id=row.id,
+        fact_type=row.fact_type,
+        subject_table=row.subject_table,
+        subject_id=row.subject_id,
+        payload=row.payload,
+        extractor_version_id=row.extractor_version_id,
+        supersedes_id=row.supersedes_id,
+        retracted=row.retracted,
+    )
 
 
 def _documents_needing_processing(session: Session, limit: int) -> list[int]:
@@ -105,22 +120,13 @@ def _latest_facts_by_type(session: Session, document_id: int) -> dict[str, Fact]
             FactORM.fact_type.in_(_MANAGED_FACT_TYPES),
             FactORM.retracted.is_(False),
         )
-        .order_by(FactORM.created_at.asc())
+        .order_by(FactORM.created_at.asc(), FactORM.id.asc())
     ).all()
 
     latest: dict[str, Fact] = {}
     for row in rows:
         # Ascending order means the last write per type wins the dict slot.
-        latest[row.fact_type] = Fact(
-            id=row.id,
-            fact_type=row.fact_type,
-            subject_table=row.subject_table,
-            subject_id=row.subject_id,
-            payload=row.payload,
-            extractor_version_id=row.extractor_version_id,
-            supersedes_id=row.supersedes_id,
-            retracted=row.retracted,
-        )
+        latest[row.fact_type] = _as_fact(row)
     return latest
 
 
@@ -132,33 +138,84 @@ def process_one_document(
     extractor: ExtractorVersion,
     classifier: KeywordTopicClassifier,
 ) -> None:
-    document = load_document(session, document_id, blob_store)
+    """Classify one document as an atomic replacement generation.
 
-    # On a reprocess these already exist from an older extractor version.
-    # Passing them as `supersedes` chains new → old instead of leaving two
-    # unrelated competing facts, so "what did we believe, and what changed
-    # it" stays answerable (P5: supersede, never mutate).
-    prior = _latest_facts_by_type(session, document_id)
+    ``begin_nested()`` creates a database savepoint. If any classifier or
+    provenance write raises, SQLAlchemy rolls back every write made for this
+    document while leaving the outer batch transaction usable for the next
+    document. The prior generation is retired only after the replacement and
+    its provenance have flushed successfully, so the switch is all-or-nothing.
+    """
+    with session.begin_nested():
+        document = load_document(session, document_id, blob_store)
 
-    detection = detect_country(document.text)
-    if detection.country is not None:
+        # Capture every live row before creating replacements. Historical
+        # versions of this pipeline could leave more than one live leaf; a
+        # successful run heals that state by retiring all of them. The newest
+        # row per type remains the direct supersedes link for the audit chain.
+        prior_rows = session.scalars(
+            select(FactORM)
+            .join(
+                ExtractorVersionORM,
+                FactORM.extractor_version_id == ExtractorVersionORM.id,
+            )
+            .where(
+                FactORM.subject_table == "documents",
+                FactORM.subject_id == document_id,
+                FactORM.fact_type.in_(_MANAGED_FACT_TYPES),
+                FactORM.retracted.is_(False),
+                ExtractorVersionORM.name == EXTRACTOR_NAME,
+            )
+            .order_by(FactORM.created_at.asc(), FactORM.id.asc())
+        ).all()
+        prior: dict[str, Fact] = {}
+        for row in prior_rows:
+            prior[row.fact_type] = _as_fact(row)
+
+        detection = detect_country(document.text)
+        # None is an explicit current result. Omitting the row would let an old
+        # country fact remain the latest leaf when a newer classifier no longer
+        # detects a country.
         record_document_fact(
-            session, document, "country", detection.country, extractor, ontology, supersedes=prior.get("country")
+            session,
+            document,
+            "country",
+            detection.country,
+            extractor,
+            ontology,
+            supersedes=prior.get("country"),
         )
 
-    escalation = score_escalation(document.text)
-    record_document_fact(
-        session, document, "escalation", escalation.label, extractor, ontology, supersedes=prior.get("escalation")
-    )
+        escalation = score_escalation(document.text)
+        record_document_fact(
+            session,
+            document,
+            "escalation",
+            escalation.label,
+            extractor,
+            ontology,
+            supersedes=prior.get("escalation"),
+        )
 
-    # Written last, deliberately: _documents_needing_processing() checks for a
-    # current-version 'topic' fact as the "this document is done" signal. If
-    # country or escalation raise above, topic is never written — so the
-    # document stays eligible next run instead of silently looking complete.
-    classification = classifier.classify(document.text)
-    record_document_fact(
-        session, document, "topic", classification.topic, extractor, ontology, supersedes=prior.get("topic")
-    )
+        # Written last, deliberately: _documents_needing_processing() checks
+        # for a current-version 'topic' fact as the completion marker.
+        classification = classifier.classify(document.text)
+        record_document_fact(
+            session,
+            document,
+            "topic",
+            classification.topic,
+            extractor,
+            ontology,
+            supersedes=prior.get("topic"),
+        )
+
+        # Force all new facts and provenance rows through database validation
+        # before changing which generation is live.
+        session.flush()
+        for row in prior_rows:
+            row.retracted = True
+        session.flush()
 
 
 def run_core_processing(limit: int = 500, blob_store: BlobStore | None = None) -> ProcessCoreStats:
@@ -183,13 +240,8 @@ def run_core_processing(limit: int = 500, blob_store: BlobStore | None = None) -
                 process_one_document(session, document_id, blob_store, ontology, extractor, classifier)
                 stats.processed += 1
             except Exception:
-                # These are pure functions over already-validated data (no
-                # network, no unvalidated user input), so a failure here is
-                # expected to be rare. If one ever corrupts the session
-                # enough to break subsequent iterations, that will show up
-                # as a spike in `errors` on the next run and is the signal
-                # to add per-document sub-transactions — not worth the
-                # complexity until it's an observed problem (P7).
+                # process_one_document owns a savepoint, so its partial work
+                # is already gone and the outer batch can continue safely.
                 stats.errors += 1
 
     return stats
