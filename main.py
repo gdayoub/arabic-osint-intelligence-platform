@@ -42,7 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("run-pipeline", help="Run ingestion + processing")
     sub.add_parser("dashboard", help="Launch Streamlit dashboard")
 
-    sub.add_parser("init-core-db", help="Create the entity-resolution core schema (M1)")
+    sub.add_parser(
+        "init-core-db",
+        help="Initialize an empty core schema through Alembic, or verify its current head",
+    )
     sub.add_parser("process-core", help="Run topic/escalation/country classifiers over core-schema documents (M1.5)")
     ingest_core_parser = sub.add_parser("ingest-core", help="Scrape sources and write documents to the core schema (M1.5)")
     ingest_core_parser.add_argument("--limit-per-source", type=int, default=None)
@@ -145,7 +148,7 @@ def main() -> None:
         print(run_full_pipeline())
     elif args.command == "init-core-db":
         init_core_db()
-        print("Core schema created.")
+        print("Core schema is ready at the repository migration head.")
     elif args.command == "process-core":
         stats = run_core_processing()
         print(f"scanned={stats.scanned} processed={stats.processed} errors={stats.errors}")

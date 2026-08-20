@@ -43,10 +43,10 @@ jobs:
       # Gate: never write to Neon from a broken tree.
       - run: python -m pytest tests/unit -q
 
-      # create_all() only creates missing tables, never alters existing ones
-      # -- safe to run every time. Needed because there's no backfill; the
-      # very first run starts from a genuinely empty Neon database.
-      - run: python main.py init-core-db
+      # Scheduled writers never create or migrate schema. They fail before
+      # ingestion unless the explicit rollout workflow has placed Neon at
+      # this checkout's sole Alembic head and reflection matches the ORM.
+      - run: python scripts/verify_core_schema.py
 
       - run: python main.py ingest-core
 

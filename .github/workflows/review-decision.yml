@@ -36,6 +36,9 @@ jobs:
       # its immutable schema/fixture/type bundle have drifted.
       - run: python scripts/generate_dashboard_contract.py --check
 
+      - name: Refuse review writes on a stale or drifted core schema
+        run: python scripts/verify_core_schema.py
+
       - name: Validate and record decision
         run: python scripts/apply_review_issue.py
 

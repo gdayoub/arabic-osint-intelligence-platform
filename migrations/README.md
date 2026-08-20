@@ -7,17 +7,19 @@ autogeneration and schema adoption.
 
 ## New, empty database
 
-Run the upgrade explicitly:
+`init-core-db` is now an Alembic entrypoint rather than a `create_all()`
+shortcut. It initializes only a genuinely empty core schema and verifies a
+schema already at head:
 
 ```bash
-DATABASE_URL='postgresql+psycopg2://...' alembic -c alembic.ini upgrade head
+DATABASE_URL='postgresql+psycopg2://...' python main.py init-core-db
 ```
 
-No scheduled workflow runs this command. Production migration is a separate,
-ordered release operation with a backup and a recorded before/after revision.
-After upgrade, `audit_head_schema(connection)` compares the database with the
-live `CoreBase` metadata. This is intentionally different from the frozen
-adoption audit below.
+It refuses an unversioned database that already has any Alembic-owned table,
+and it refuses to advance an existing older revision. Those cases require the
+explicit adoption or rollout path below. Frozen legacy `raw_articles` and
+`processed_articles` tables may coexist and are not created, changed, or
+removed by core migrations.
 
 ## Database created before Alembic
 
@@ -56,9 +58,47 @@ therefore performs its own primary-key comparison and normalized check
 comparison. The normalizer preserves literal values and recognizes
 PostgreSQL's equivalent `IN (...)` to `= ANY (ARRAY[...])` reflection form.
 
-`python main.py init-core-db` remains available during this transition for
-the current scheduled pipeline and fresh local databases. It is not a schema
-migration mechanism and must not be used to apply future revisions.
+## Production upgrade after adoption
+
+Production upgrades are manual, exact revision-boundary operations. First
+prepare and record a Neon recovery branch or point-in-time restore location.
+Then dispatch `.github/workflows/schema-upgrade.yml`. For the first rollout,
+the inputs are:
+
+```text
+expected_current: 0001_core_baseline
+expected_target:  0003_publication_state
+confirmation:     UPGRADE 0001_core_baseline TO 0003_publication_state
+```
+
+The workflow holds the same `osint-neon-writer` concurrency group as the
+pipeline, review decisions, and maintenance. Before it connects to production
+it upgrades isolated PostgreSQL 16 databases and runs the authoritative
+migration tests. Production is then checked read-only for the exact current
+revision and, for 0001, the frozen baseline shape. Apply rechecks those facts
+inside the DDL transaction, preserves legacy table counts, advances only to
+the repository's sole head, audits the reflected schema against `CoreBase`,
+commits, reconnects, and verifies again.
+
+Scheduled and manual data writers run `scripts/verify_core_schema.py`; they do
+not initialize or migrate. If code and production revisions differ, the run
+stops before the first data write. Runtime use of a newly added table lands
+only after the schema workflow succeeds.
+
+For a local read-only plan, omit `--apply`:
+
+```bash
+DATABASE_URL='postgresql+psycopg2://...' python scripts/upgrade_core_schema.py \
+  --expected-current 0001_core_baseline \
+  --expected-target 0003_publication_state
+```
+
+The migrations are forward-only. A PostgreSQL DDL failure rolls back the
+transaction. If the schema commit succeeds but a later application problem is
+found, keep the old code running against the additive schema and write a new
+forward-repair revision. Restore the recorded Neon recovery point only when a
+forward repair cannot preserve correctness; do not delete the event ledger or
+publication state with an ad-hoc downgrade.
 
 ## Verification policy
 

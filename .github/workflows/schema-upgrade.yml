@@ -1,0 +1,100 @@
+name: Upgrade Core Schema
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_current:
+        description: 'Exact production revision before apply'
+        required: true
+        type: string
+        default: '0001_core_baseline'
+      expected_target:
+        description: 'Exact repository head to apply'
+        required: true
+        type: string
+        default: '0003_publication_state'
+      recovery_reference:
+        description: 'Prepared Neon branch, PITR point, or recovery ticket'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type: UPGRADE 0001_core_baseline TO 0003_publication_state'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Schema apply and every production writer share this queue. A migration can
+# neither overlap ingestion nor be cancelled after its transaction starts.
+concurrency:
+  group: osint-neon-writer
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EXPECTED_CURRENT: ${{ inputs.expected_current }}
+      EXPECTED_TARGET: ${{ inputs.expected_target }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      RECOVERY_REFERENCE: ${{ inputs.recovery_reference }}
+      MIGRATION_TEST_DATABASE_URL: postgresql+psycopg2://postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # This includes empty-to-head, baseline-to-head with retained rows,
+      # reflected-schema drift, and the PostgreSQL append-only trigger.
+      - name: Preflight the migration on disposable PostgreSQL 16 databases
+        run: >-
+          python -m pytest
+          tests/unit/test_migrations.py
+          tests/unit/test_schema_rollout.py
+          tests/integration/test_migrations_postgres.py
+          -q
+
+      - name: Plan the exact production transition without changing it
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: >-
+          python scripts/upgrade_core_schema.py
+          --expected-current "$EXPECTED_CURRENT"
+          --expected-target "$EXPECTED_TARGET"
+
+      - name: Apply the confirmed production transition
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: >-
+          python scripts/upgrade_core_schema.py
+          --expected-current "$EXPECTED_CURRENT"
+          --expected-target "$EXPECTED_TARGET"
+          --apply
+          --confirmation "$CONFIRMATION"
+          --recovery-reference "$RECOVERY_REFERENCE"
+
+      - name: Reconnect and verify production is exactly at repository head
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python scripts/verify_core_schema.py
