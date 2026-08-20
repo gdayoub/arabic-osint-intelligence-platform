@@ -26,13 +26,22 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.store.database import get_core_session
-from src.store.orm import DocumentORM, EntityMentionORM, EntityORM, FactORM, MentionORM
+from src.resolve.review import latest_decisions
+from src.store.orm import (
+    DocumentORM,
+    EntityMentionORM,
+    EntityORM,
+    FactORM,
+    MentionORM,
+    ReviewPairORM,
+)
 from src.lang.arabic import ArabicAdapter
 from src.store.translations import get_cached
 
 RECENT_LIMIT_DEFAULT = 30
 DAILY_WINDOW_DAYS = 30
 COUNTRY_ARTICLE_LIMIT = 50
+REVIEW_QUEUE_LIMIT = 20
 
 
 def _latest_fact_values(session: Session, fact_type: str) -> dict[int, Any]:
@@ -263,6 +272,91 @@ def top_entities(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dic
     }
 
 
+def pending_review_pairs(
+    session: Session, limit: int = REVIEW_QUEUE_LIMIT
+) -> list[dict[str, Any]]:
+    """Public evidence for unresolved entity pairs, nearest threshold first.
+
+    The static dashboard cannot read document bodies because ``data.json`` is
+    public.  A source title, URL, publisher, and the exact stored mention are
+    enough to let a reviewer open the original evidence without crossing that
+    boundary.  Decisions are append-only, so a pair disappears from this view
+    whenever its latest human decision exists.
+    """
+    decided = set(latest_decisions(session))
+    rows = session.scalars(
+        select(ReviewPairORM).order_by(ReviewPairORM.id.desc())
+    ).all()
+
+    # A pair can be rescored by a later model version. Show only its newest
+    # snapshot, not one card per historical scorer.
+    newest: dict[tuple[int, int], ReviewPairORM] = {}
+    for row in rows:
+        key = (row.left_mention_id, row.right_mention_id)
+        if key not in decided and key not in newest:
+            newest[key] = row
+
+    pending = sorted(
+        newest.values(), key=lambda row: (abs(row.score - row.threshold), -row.id)
+    )[:limit]
+    if not pending:
+        return []
+
+    mention_ids = {
+        mention_id
+        for row in pending
+        for mention_id in (row.left_mention_id, row.right_mention_id)
+    }
+    mentions = session.scalars(
+        select(MentionORM).where(
+            MentionORM.id.in_(mention_ids), MentionORM.retracted.is_(False)
+        )
+    ).all()
+    mention_by_id = {mention.id: mention for mention in mentions}
+
+    document_ids = {mention.document_id for mention in mentions}
+    documents = session.scalars(
+        select(DocumentORM).where(
+            DocumentORM.id.in_(document_ids), DocumentORM.retracted.is_(False)
+        )
+    ).all()
+    document_by_id = {document.id: document for document in documents}
+    title_by_doc = _latest_fact_values(session, "title")
+
+    def evidence(mention_id: int) -> dict[str, Any] | None:
+        mention = mention_by_id.get(mention_id)
+        document = document_by_id.get(mention.document_id) if mention else None
+        if mention is None or document is None:
+            return None
+        return {
+            "mention_id": mention.id,
+            "text": mention.text,
+            "source": document.source,
+            "url": document.url,
+            "title": title_by_doc.get(document.id) or "(untitled)",
+        }
+
+    items: list[dict[str, Any]] = []
+    for row in pending:
+        left = evidence(row.left_mention_id)
+        right = evidence(row.right_mention_id)
+        if left is None or right is None:
+            continue
+        items.append(
+            {
+                "id": row.id,
+                "object_type": row.object_type,
+                "score": row.score,
+                "threshold": row.threshold,
+                "distance": abs(row.score - row.threshold),
+                "features": row.features,
+                "left": left,
+                "right": right,
+            }
+        )
+    return items
+
+
 def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str, Any]:
     total_raw = (
         session.scalar(select(func.count()).select_from(DocumentORM).where(DocumentORM.retracted.is_(False))) or 0
@@ -337,6 +431,9 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
                 select(func.count()).select_from(EntityORM).where(EntityORM.retracted.is_(False))
             ) or 0,
             "top": top_entities(session),
+        },
+        "review_queue": {
+            "items": pending_review_pairs(session),
         },
     }
 

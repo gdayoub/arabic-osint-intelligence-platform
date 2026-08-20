@@ -63,7 +63,8 @@ secrets, not in the repo.
 - **M3** mention extraction. hand written aho corasick gazetteer plus a
   camelbert NER wrapper. gazetteer F1 0.90, model 0.89.
 - **M4** entity resolution. blocking, learned pair scorer, union find with a
-  complete linkage guard. core is done, review queue is not.
+  complete linkage guard, a visible evidence-backed review queue, append-only
+  human decisions, and manual merge/split controls are done.
 
 current live numbers: 451 documents, 6084 mentions, 61 entities.
 
@@ -130,9 +131,9 @@ resolution was producing garbage in production.
 
 per the brief, in order:
 
-1. finish M4. the human review queue for pairs near the threshold, and manual
-   merge and split recorded with provenance.
-2. retrain the scorer on blocking surviving pairs. bigger label set.
+1. use the dashboard review queue to label blocking-surviving production
+   pairs, then export those labels for training.
+2. retrain the scorer on those blocking-surviving pairs. bigger label set.
 3. M5 bilingual. translation exists for titles already. entity names and
    evidence sentences plus bidirectional search is the rest.
 4. M6 links and the graph. co-occurrence edges, recursive CTEs, centrality.

@@ -1,0 +1,58 @@
+name: Entity Review Decision
+
+on:
+  issues:
+    types: [opened]
+
+concurrency:
+  group: entity-review-decision
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.actor == github.repository_owner &&
+      startsWith(github.event.issue.title, '[entity-review] pair ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      REVIEW_ISSUE_TITLE: ${{ github.event.issue.title }}
+      REVIEW_ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Validate and record decision
+        run: python scripts/apply_review_issue.py
+
+      - name: Refresh public dashboard data
+        run: |
+          python main.py bake-dashboard --out dist/data.json
+          cp src/api/static/dashboard.html dist/index.html
+          cp src/api/static/country.html dist/country.html
+
+      - name: Deploy refreshed dashboard
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          wranglerVersion: '4'
+
+      - name: Confirm and close review issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Decision recorded with provenance and removed from the pending queue. The entity graph will apply this constraint during the next scheduled resolver run."
+          gh issue close "$ISSUE_NUMBER" --reason completed

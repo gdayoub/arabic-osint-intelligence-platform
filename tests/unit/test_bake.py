@@ -29,7 +29,7 @@ def test_bake_output_matches_dashboard_expected_shape(session, ontology, blob_st
 
     data = bake(session)
 
-    assert set(data.keys()) == {"generated_at", "schema_version", "stats", "topics", "escalation", "recent", "daily", "mentions", "entities"}
+    assert set(data.keys()) == {"generated_at", "schema_version", "stats", "topics", "escalation", "recent", "daily", "mentions", "entities", "review_queue"}
     assert data["stats"]["total_raw"] == 1
     assert data["stats"]["total_processed"] == 1
     assert data["stats"]["sources"] == {"AlJazeeraArabic": 1}
@@ -39,6 +39,65 @@ def test_bake_output_matches_dashboard_expected_shape(session, ontology, blob_st
     assert data["recent"][0]["title"] == "عنوان الخبر الأول"
     assert data["recent"][0]["country"] == "Syria"
     assert data["recent"][0]["url"] == "https://example.com/1"
+    assert data["review_queue"] == {"items": []}
+
+
+def test_bake_includes_pending_review_evidence_and_hides_decided_pairs(
+    session, ontology, blob_store
+):
+    from src.resolve.features import MentionContext, PairFeatures
+    from src.resolve.review import enqueue_review_pair, record_decision
+    from src.store.provenance import create_mention
+
+    extractor = register_extractor_version(session, "test", "1.0.0")
+    left_doc = _seed_document(
+        session, ontology, blob_store, extractor,
+        url="https://example.com/left", body="ذكر محمد أحمد في النص.",
+        title="عنوان الدليل الأول", topic="Politics", escalation="low",
+    )
+    right_doc = _seed_document(
+        session, ontology, blob_store, extractor,
+        url="https://example.com/right", body="ظهر محمد احمد في الخبر.",
+        title="عنوان الدليل الثاني", topic="Politics", escalation="low",
+    )
+    left = create_mention(session, left_doc, "محمد أحمد", 4, 13, "person", extractor, ontology)
+    right = create_mention(session, right_doc, "محمد احمد", 4, 13, "person", extractor, ontology)
+    session.flush()
+
+    left_context = MentionContext(
+        left.id, "محمد احمد", "person", left.document_id,
+        "AlJazeeraArabic", None, frozenset({"محمد"}), frozenset(),
+    )
+    right_context = MentionContext(
+        right.id, "محمد احمد", "person", right.document_id,
+        "AlJazeeraArabic", None, frozenset({"محمد"}), frozenset(),
+    )
+    features = PairFeatures(0.92, 0.5, 0.25, 0.0, 1.0, 1.0)
+    assert enqueue_review_pair(
+        session, left_context, right_context, 0.58, 0.60, features, extractor
+    )
+    session.commit()
+
+    items = bake(session)["review_queue"]["items"]
+
+    assert len(items) == 1
+    assert items[0]["score"] == 0.58
+    assert items[0]["left"] == {
+        "mention_id": left.id,
+        "text": "محمد أحمد",
+        "source": "AlJazeeraArabic",
+        "url": "https://example.com/left",
+        "title": "عنوان الدليل الأول",
+    }
+    assert items[0]["right"]["title"] == "عنوان الدليل الثاني"
+
+    record_decision(
+        session, left.id, right.id, "different", "tester", "unit-test",
+        review_pair_id=items[0]["id"],
+    )
+    session.commit()
+
+    assert bake(session)["review_queue"] == {"items": []}
 
 
 def test_bake_never_includes_document_body_text(session, ontology, blob_store):

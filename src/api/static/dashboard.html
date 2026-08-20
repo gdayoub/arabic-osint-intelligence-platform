@@ -432,6 +432,55 @@ body::after {
 .country-name { font-size: 0.82rem; font-weight: 550; color: var(--text-primary); }
 .country-count { font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; color: var(--red-400); }
 
+/* ── Human Review Queue ───────────────────── */
+.review-intro {
+  color: var(--text-tertiary); font-size: 0.8rem; line-height: 1.6;
+  margin: -8px 0 16px; max-width: 760px;
+}
+.review-list { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.review-card { padding: 22px; border-top: 2px solid var(--warning); }
+.review-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 16px;
+}
+.review-id { font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-muted); }
+.review-type {
+  font-family: var(--font-mono); font-size: 0.58rem; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--warning); background: var(--warning-bg);
+  border: 1px solid rgba(234,179,8,0.15); border-radius: 4px; padding: 3px 8px;
+}
+.review-score { margin-left: auto; text-align: right; }
+.review-score strong { display: block; font-family: var(--font-mono); font-size: 1.2rem; }
+.review-score span { display: block; font-size: 0.62rem; color: var(--text-muted); }
+.review-pair { display: grid; grid-template-columns: 1fr 34px 1fr; gap: 12px; align-items: stretch; }
+.review-evidence {
+  min-width: 0; padding: 16px; background: rgba(255,255,255,0.018);
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+}
+.review-mention { font-size: 1.15rem; font-weight: 700; direction: rtl; text-align: right; margin-bottom: 10px; }
+.review-article { font-size: 0.76rem; line-height: 1.5; color: var(--text-secondary); }
+.review-article a { color: inherit; text-decoration: none; }
+.review-article a:hover { color: var(--red-400); }
+.review-source { margin-top: 8px; font-family: var(--font-mono); font-size: 0.58rem; color: var(--text-muted); }
+.review-vs { align-self: center; text-align: center; font-family: var(--font-mono); font-size: 0.58rem; color: var(--text-muted); }
+.review-features { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.review-feature {
+  font-family: var(--font-mono); font-size: 0.57rem; color: var(--text-tertiary);
+  border: 1px solid var(--border-default); background: var(--bg-elevated);
+  border-radius: 4px; padding: 4px 7px;
+}
+.review-feature strong { color: var(--text-primary); font-weight: 600; }
+.review-actions { display: flex; gap: 10px; margin-top: 16px; }
+.review-action {
+  flex: 1; padding: 10px 14px; border-radius: var(--radius-sm); text-align: center;
+  text-decoration: none; font-size: 0.75rem; font-weight: 650; transition: all 220ms var(--ease);
+}
+.review-action--same { color: var(--success); background: var(--success-bg); border: 1px solid rgba(34,197,94,0.2); }
+.review-action--different { color: var(--red-400); background: var(--danger-bg); border: 1px solid var(--red-200); }
+.review-action:hover { transform: translateY(-1px); filter: brightness(1.2); }
+.review-auth-note { margin-top: 10px; color: var(--text-muted); font-size: 0.65rem; text-align: center; }
+.review-empty { padding: 26px; color: var(--text-tertiary); font-size: 0.82rem; }
+
 /* ── Feed ──────────────────────────────────── */
 .feed-list {
   display: flex; flex-direction: column; gap: 1px;
@@ -528,6 +577,10 @@ body::after {
   .briefing-grid { grid-template-columns: 1fr; }
   .hero h1 { font-size: 1.6rem; }
   .container { padding: 0 16px; }
+  .review-card { padding: 16px; }
+  .review-pair { grid-template-columns: 1fr; }
+  .review-vs { padding: 0; }
+  .review-actions { flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -635,6 +688,15 @@ body::after {
     <div class="section-head reveal"><div class="section-title">Named Entities</div><div class="section-sub">Resolved &amp; Ranked</div></div>
     <div id="entity-container"></div>
   </div>
+  <div class="divider"></div>
+
+  <!-- Human Review -->
+  <div class="section">
+    <div class="section-head reveal"><div class="section-title">Entity Review Queue</div><div class="section-sub" id="review-count">Human in the Loop</div></div>
+    <p class="review-intro reveal">Pairs closest to the resolver threshold need a human call. Compare the exact Arabic mentions and their source articles, then record whether they refer to the same real-world entity.</p>
+    <div id="review-container"><div class="card review-card"><div class="skeleton" style="height:180px"></div></div></div>
+  </div>
+  <div class="divider"></div>
 
   <!-- Feed -->
   <div class="section">
@@ -660,6 +722,19 @@ function observe() { document.querySelectorAll('.reveal, .reveal-up, .stagger').
 observe();
 
 async function fetchJSON(u) { const r = await fetch(u); if (!r.ok) throw new Error(r.status); return r.json(); }
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;'
+  })[c]);
+}
+
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '#';
+  } catch (_) { return '#'; }
+}
 
 function countUp(el, target, ms = 1000) {
   const t0 = performance.now();
@@ -852,6 +927,69 @@ function renderMentionCounts(mentions) {
   setTimeout(() => document.querySelectorAll('.ent-bar-fill[data-w]').forEach(b => { b.style.width = b.dataset.w; }), 400);
 }
 
+const REVIEW_REPOSITORY = 'gdayoub/arabic-osint-intelligence-platform';
+
+function reviewIssueUrl(item, decision) {
+  const action = decision === 'accept' ? 'accept' : 'reject';
+  const verdict = action === 'accept' ? 'Same entity' : 'Different entities';
+  const title = `[entity-review] pair ${item.id} ${action}`;
+  const body = [
+    `## Entity review #${item.id}`,
+    '',
+    `**Decision:** ${verdict}`,
+    `**Left mention:** ${item.left.text} (mention ${item.left.mention_id})`,
+    `**Right mention:** ${item.right.text} (mention ${item.right.mention_id})`,
+    `**Model score:** ${Number(item.score).toFixed(3)} / threshold ${Number(item.threshold).toFixed(3)}`,
+    '',
+    'Submit this issue to record the decision. The repository workflow accepts decisions from the repository owner only.',
+    '',
+    '<!-- entity-review:v1 -->',
+  ].join('\n');
+  return `https://github.com/${REVIEW_REPOSITORY}/issues/new?${new URLSearchParams({title, body})}`;
+}
+
+function renderReviewQueue(queue) {
+  const items = queue?.items || [];
+  const container = document.getElementById('review-container');
+  document.getElementById('review-count').textContent = `${items.length} Pending · Human in the Loop`;
+  if (!items.length) {
+    container.innerHTML = '<div class="card review-empty">No pending entity pairs. The queue will refill when the resolver finds uncertain matches.</div>';
+    return;
+  }
+
+  const featureLabels = {
+    name_similarity: 'Name', key_overlap: 'Key overlap', co_mention_overlap: 'Context',
+    temporal_proximity: 'Time', same_source: 'Same source', same_type: 'Same type'
+  };
+  container.innerHTML = `<div class="review-list stagger">${items.map(item => {
+    const score = Number(item.score);
+    const threshold = Number(item.threshold);
+    const featureHTML = Object.entries(item.features || {}).map(([name, value]) =>
+      `<span class="review-feature">${escapeHTML(featureLabels[name] || name)} <strong>${Number(value).toFixed(2)}</strong></span>`
+    ).join('');
+    const evidence = side => `<div class="review-evidence">
+      <div class="review-mention" lang="ar">${escapeHTML(side.text)}</div>
+      <div class="review-article"><a href="${escapeHTML(safeExternalUrl(side.url))}" target="_blank" rel="noopener noreferrer">${escapeHTML(side.title)}</a></div>
+      <div class="review-source">${escapeHTML(side.source)} · mention ${Number(side.mention_id)}</div>
+    </div>`;
+    return `<article class="card review-card">
+      <div class="review-card-head">
+        <span class="review-id">PAIR ${Number(item.id)}</span>
+        <span class="review-type">${escapeHTML(item.object_type)}</span>
+        <div class="review-score"><strong>${score.toFixed(3)}</strong><span>threshold ${threshold.toFixed(3)} · Δ ${Math.abs(score-threshold).toFixed(3)}</span></div>
+      </div>
+      <div class="review-pair">${evidence(item.left)}<div class="review-vs">VS</div>${evidence(item.right)}</div>
+      <div class="review-features">${featureHTML}</div>
+      <div class="review-actions">
+        <a class="review-action review-action--same" href="${escapeHTML(reviewIssueUrl(item, 'accept'))}" target="_blank" rel="noopener noreferrer">Same entity ↗</a>
+        <a class="review-action review-action--different" href="${escapeHTML(reviewIssueUrl(item, 'reject'))}" target="_blank" rel="noopener noreferrer">Different entities ↗</a>
+      </div>
+      <div class="review-auth-note">Opens a prefilled GitHub confirmation. Only the repository owner can record a decision.</div>
+    </article>`;
+  }).join('')}</div>`;
+  observe();
+}
+
 function renderFeed(articles) {
   if (!articles.length) { document.getElementById('feed-container').innerHTML = '<div style="color:var(--text-muted);padding:20px 0">No articles available.</div>'; return; }
   document.getElementById('feed-container').innerHTML = `<div class="feed-list">${articles.map((a,i) => {
@@ -899,7 +1037,7 @@ async function init() {
     const d = await fetchJSON('data.json');
     const {stats, topics, escalation: esc, recent} = d;
     renderKPIs(stats,esc); renderBriefing(stats,topics,esc,recent); renderEscalation(esc);
-    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(d.countries); renderEntities(d.entities, d.mentions); renderFeed(recent);
+    renderCharts(stats,topics,esc,recent); renderSources(stats); renderCountries(d.countries); renderEntities(d.entities, d.mentions); renderReviewQueue(d.review_queue); renderFeed(recent);
     const updated = new Date(d.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
     document.getElementById('last-update').textContent = `Updated \u00B7 ${updated}`;
   } catch(e) { console.error(e); document.getElementById('last-update').textContent = 'Connection Error'; }
