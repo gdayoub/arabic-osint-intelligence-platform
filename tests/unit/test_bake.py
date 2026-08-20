@@ -5,16 +5,22 @@ from __future__ import annotations
 import json
 
 from scripts.bake_dashboard_data import bake, bake_country_pages, country_slug, write_data_json
+from src.pipeline.extract_core import EXTRACTION_MARKER
+from src.pipeline.process_core import EXTRACTOR_NAME as PROCESSOR_NAME
+from src.pipeline.process_core import EXTRACTOR_VERSION as PROCESSOR_VERSION
 from src.store.provenance import create_document, record_document_fact, register_extractor_version
 
 
 def _seed_document(session, ontology, blob_store, extractor, *, url, body, title, topic, escalation, country=None):
     document = create_document(session, source="AlJazeeraArabic", text=body, content_hash=url, blob_store=blob_store, url=url)
     record_document_fact(session, document, "title", title, extractor, ontology)
-    record_document_fact(session, document, "topic", topic, extractor, ontology)
-    record_document_fact(session, document, "escalation", escalation, extractor, ontology)
+    processor = register_extractor_version(
+        session, PROCESSOR_NAME, PROCESSOR_VERSION
+    )
+    record_document_fact(session, document, "topic", topic, processor, ontology)
+    record_document_fact(session, document, "escalation", escalation, processor, ontology)
     if country:
-        record_document_fact(session, document, "country", country, extractor, ontology)
+        record_document_fact(session, document, "country", country, processor, ontology)
     return document
 
 
@@ -62,6 +68,12 @@ def test_bake_includes_pending_review_evidence_and_hides_decided_pairs(
     )
     left = create_mention(session, left_doc, "محمد أحمد", 4, 13, "person", extractor, ontology)
     right = create_mention(session, right_doc, "محمد احمد", 4, 13, "person", extractor, ontology)
+    record_document_fact(
+        session, left_doc, EXTRACTION_MARKER, 1, extractor, ontology
+    )
+    record_document_fact(
+        session, right_doc, EXTRACTION_MARKER, 1, extractor, ontology
+    )
     session.flush()
 
     left_context = MentionContext(
@@ -163,6 +175,241 @@ def test_bake_total_processed_excludes_documents_without_topic_fact(session, ont
     assert data["stats"]["total_raw"] == 1
     assert data["stats"]["total_processed"] == 0
     assert data["recent"][0]["topic"] is None
+
+
+def test_bake_counts_only_distinct_live_current_completed_documents(
+    session, ontology, blob_store
+):
+    from src.store.documents import retract_document
+
+    metadata = register_extractor_version(session, "test", "1.0.0")
+    current_processor = register_extractor_version(
+        session, PROCESSOR_NAME, PROCESSOR_VERSION
+    )
+    stale_processor = register_extractor_version(
+        session, PROCESSOR_NAME, "1.0.0"
+    )
+
+    complete = _seed_document(
+        session,
+        ontology,
+        blob_store,
+        metadata,
+        url="https://example.com/complete",
+        body="وثيقة مكتملة",
+        title="مكتملة",
+        topic="Politics",
+        escalation="low",
+        country="Syria",
+    )
+    # A second current topic fact must replace the displayed value without
+    # turning one document into two processed documents.
+    record_document_fact(
+        session, complete, "topic", "Economy", current_processor, ontology
+    )
+
+    unprocessed = create_document(
+        session,
+        source="test",
+        text="لم تعالج",
+        content_hash="unprocessed-current-test",
+        blob_store=blob_store,
+        url="https://example.com/unprocessed",
+    )
+    record_document_fact(
+        session, unprocessed, "title", "غير معالجة", metadata, ontology
+    )
+
+    mixed = create_document(
+        session,
+        source="test",
+        text="جيل مختلط",
+        content_hash="mixed-generation",
+        blob_store=blob_store,
+        url="https://example.com/mixed",
+    )
+    record_document_fact(session, mixed, "title", "مختلطة", metadata, ontology)
+    record_document_fact(
+        session, mixed, "topic", "Military", current_processor, ontology
+    )
+    record_document_fact(
+        session, mixed, "escalation", "high", stale_processor, ontology
+    )
+    record_document_fact(
+        session, mixed, "country", "Jordan", current_processor, ontology
+    )
+
+    stale = create_document(
+        session,
+        source="test",
+        text="جيل قديم",
+        content_hash="stale-generation",
+        blob_store=blob_store,
+        url="https://example.com/stale",
+    )
+    record_document_fact(session, stale, "title", "قديمة", metadata, ontology)
+    record_document_fact(
+        session, stale, "topic", "Sports", stale_processor, ontology
+    )
+    record_document_fact(
+        session, stale, "escalation", "medium", stale_processor, ontology
+    )
+
+    retracted = _seed_document(
+        session,
+        ontology,
+        blob_store,
+        metadata,
+        url="https://example.com/retracted",
+        body="وثيقة مسحوبة",
+        title="مسحوبة",
+        topic="Military",
+        escalation="high",
+        country="Iraq",
+    )
+    retract_document(session, retracted.id, "publisher withdrew the article")
+    session.commit()
+
+    data = bake(session)
+    country_pages = bake_country_pages(session)
+
+    assert data["stats"]["total_raw"] == 4
+    assert data["stats"]["total_processed"] == 1
+    assert data["stats"]["total_processed"] <= data["stats"]["total_raw"]
+    assert data["topics"]["topics"] == [{"topic": "Economy", "count": 1}]
+    assert data["escalation"]["escalation"] == {"low": 1}
+    assert {item["url"] for item in data["recent"]} == {
+        "https://example.com/complete",
+        "https://example.com/unprocessed",
+        "https://example.com/mixed",
+        "https://example.com/stale",
+    }
+    assert set(country_pages) == {"Syria"}
+
+
+def test_bake_uses_only_current_live_mention_and_entity_evidence(
+    session, ontology, blob_store
+):
+    from src.store.documents import retract_document
+    from src.store.provenance import create_entity, create_mention
+
+    metadata = register_extractor_version(session, "test", "1.0.0")
+    old_extractor = register_extractor_version(session, "fake_mentions", "1.0.0")
+    current_extractor = register_extractor_version(
+        session, "fake_mentions", "2.0.0"
+    )
+
+    live = _seed_document(
+        session,
+        ontology,
+        blob_store,
+        metadata,
+        url="https://example.com/live-evidence",
+        body="محمد أحمد",
+        title="دليل حي",
+        topic="Politics",
+        escalation="low",
+    )
+    old_mention = create_mention(
+        session,
+        live,
+        "محمد أحمد",
+        0,
+        len("محمد أحمد"),
+        "person",
+        old_extractor,
+        ontology,
+    )
+    old_marker = record_document_fact(
+        session, live, EXTRACTION_MARKER, 1, old_extractor, ontology
+    )
+    create_entity(
+        session,
+        "person",
+        "محمد أحمد (قديم)",
+        {"surface_forms": ["محمد أحمد"]},
+        old_mention,
+        old_extractor,
+        ontology,
+    )
+
+    current_mention = create_mention(
+        session,
+        live,
+        "محمد أحمد",
+        0,
+        len("محمد أحمد"),
+        "person",
+        current_extractor,
+        ontology,
+    )
+    record_document_fact(
+        session,
+        live,
+        EXTRACTION_MARKER,
+        1,
+        current_extractor,
+        ontology,
+        supersedes=old_marker,
+    )
+    create_entity(
+        session,
+        "person",
+        "محمد أحمد",
+        {"surface_forms": ["محمد أحمد"]},
+        current_mention,
+        current_extractor,
+        ontology,
+    )
+
+    withdrawn = _seed_document(
+        session,
+        ontology,
+        blob_store,
+        metadata,
+        url="https://example.com/withdrawn-evidence",
+        body="بشار الأسد",
+        title="دليل مسحوب",
+        topic="Military",
+        escalation="high",
+    )
+    withdrawn_mention = create_mention(
+        session,
+        withdrawn,
+        "بشار الأسد",
+        0,
+        len("بشار الأسد"),
+        "person",
+        current_extractor,
+        ontology,
+    )
+    record_document_fact(
+        session, withdrawn, EXTRACTION_MARKER, 1, current_extractor, ontology
+    )
+    create_entity(
+        session,
+        "person",
+        "بشار الأسد",
+        {"surface_forms": ["بشار الأسد"]},
+        withdrawn_mention,
+        current_extractor,
+        ontology,
+    )
+    retract_document(session, withdrawn.id, "source retracted the evidence")
+    session.commit()
+
+    data = bake(session)
+
+    assert data["mentions"]["total"] == 1
+    assert data["mentions"]["top"] == {
+        "person": [{"name": "محمد أحمد", "count": 1}]
+    }
+    assert data["entities"]["total"] == 1
+    assert data["entities"]["top"] == {
+        "person": [
+            {"name": "محمد أحمد", "count": 1, "surface_forms": []}
+        ]
+    }
 
 
 def test_country_slug_is_url_safe():
@@ -287,6 +534,9 @@ def test_top_entities_shows_the_merged_surface_forms(session, ontology, blob_sto
             url=f"https://example.com/te-{i}",
         )
         create_mention(session, doc, "دونالد ترامب", 4, 16, "person", extractor, ontology)
+        record_document_fact(
+            session, doc, EXTRACTION_MARKER, 1, extractor, ontology
+        )
     session.flush()
 
     resolve_all(session, ontology)

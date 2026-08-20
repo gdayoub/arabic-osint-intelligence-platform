@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -26,11 +27,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.store.database import get_core_session
+from src.pipeline.extract_core import EXTRACTION_MARKER
+from src.pipeline.process_core import EXTRACTOR_NAME as PROCESSOR_NAME
+from src.pipeline.process_core import EXTRACTOR_VERSION as PROCESSOR_VERSION
 from src.resolve.review import latest_decisions
 from src.store.orm import (
     DocumentORM,
     EntityMentionORM,
     EntityORM,
+    ExtractorVersionORM,
     FactORM,
     MentionORM,
     ReviewPairORM,
@@ -42,6 +47,46 @@ RECENT_LIMIT_DEFAULT = 30
 DAILY_WINDOW_DAYS = 30
 COUNTRY_ARTICLE_LIMIT = 50
 REVIEW_QUEUE_LIMIT = 20
+_REQUIRED_PROCESSING_FACT_TYPES = ("topic", "escalation")
+
+
+@dataclass(slots=True)
+class CurrentProcessing:
+    """The completed document-classification generation used by the bake.
+
+    ``topic`` is process_core's completion marker, but a complete public row
+    also needs ``escalation`` because that fact is always produced by the
+    same run. ``country`` is optional, so its absence does not make a
+    document incomplete.
+    """
+
+    document_ids: set[int]
+    topics: dict[int, Any]
+    escalations: dict[int, Any]
+    countries: dict[int, Any]
+
+
+def _latest_fact_rows(session: Session, fact_type: str) -> dict[int, FactORM]:
+    """Newest live fact row per live document for one fact type."""
+    rows = session.scalars(
+        select(FactORM)
+        .join(
+            DocumentORM,
+            (FactORM.subject_table == "documents")
+            & (DocumentORM.id == FactORM.subject_id),
+        )
+        .where(
+            FactORM.fact_type == fact_type,
+            FactORM.retracted.is_(False),
+            DocumentORM.retracted.is_(False),
+        )
+        .order_by(FactORM.created_at.asc(), FactORM.id.asc())
+    )
+
+    latest: dict[int, FactORM] = {}
+    for row in rows:
+        latest[row.subject_id] = row
+    return latest
 
 
 def _latest_fact_values(session: Session, fact_type: str) -> dict[int, Any]:
@@ -55,19 +100,119 @@ def _latest_fact_values(session: Session, fact_type: str) -> dict[int, Any]:
     writes a fact out of chronological order, so created_at ordering and
     the supersede chain agree in practice).
     """
-    rows = session.scalars(
-        select(FactORM)
-        .where(
-            FactORM.subject_table == "documents",
-            FactORM.fact_type == fact_type,
-            FactORM.retracted.is_(False),
+    return {
+        document_id: row.payload.get("value")
+        for document_id, row in _latest_fact_rows(session, fact_type).items()
+    }
+
+
+def _current_processing(session: Session) -> CurrentProcessing:
+    """Return only live documents completed by the configured processor.
+
+    Facts are append-only, so merely finding any current-version topic row is
+    not enough: a newer stale fact may have superseded it. We first select the
+    latest live row for every required type, then require both latest rows to
+    belong to the configured extractor version. This makes the completed IDs
+    a true subset of live documents and prevents mixed processing generations
+    from entering public aggregates.
+
+    The schema does not yet identify individual attempts within one extractor
+    version. Per-attempt atomicity belongs to F0.1b; this checkpoint uses the
+    strongest generation boundary the current schema can represent.
+    """
+    extractor_version_id = session.scalar(
+        select(ExtractorVersionORM.id).where(
+            ExtractorVersionORM.name == PROCESSOR_NAME,
+            ExtractorVersionORM.version == PROCESSOR_VERSION,
         )
-        .order_by(FactORM.created_at.asc())
     )
-    latest: dict[int, Any] = {}
-    for row in rows:
-        latest[row.subject_id] = row.payload.get("value")
-    return latest
+    if extractor_version_id is None:
+        return CurrentProcessing(set(), {}, {}, {})
+
+    latest_by_type = {
+        fact_type: _latest_fact_rows(session, fact_type)
+        for fact_type in (*_REQUIRED_PROCESSING_FACT_TYPES, "country")
+    }
+    topic_rows = latest_by_type["topic"]
+    escalation_rows = latest_by_type["escalation"]
+
+    completed_document_ids = set(topic_rows) & set(escalation_rows)
+    completed_document_ids = {
+        document_id
+        for document_id in completed_document_ids
+        if topic_rows[document_id].extractor_version_id == extractor_version_id
+        and escalation_rows[document_id].extractor_version_id == extractor_version_id
+    }
+
+    topics = {
+        document_id: topic_rows[document_id].payload.get("value")
+        for document_id in completed_document_ids
+    }
+    escalations = {
+        document_id: escalation_rows[document_id].payload.get("value")
+        for document_id in completed_document_ids
+    }
+    country_rows = latest_by_type["country"]
+    countries = {
+        document_id: country_rows[document_id].payload.get("value")
+        for document_id in completed_document_ids
+        if document_id in country_rows
+        and country_rows[document_id].extractor_version_id == extractor_version_id
+    }
+    return CurrentProcessing(completed_document_ids, topics, escalations, countries)
+
+
+def _current_live_mentions(session: Session) -> list[MentionORM]:
+    """Live mentions from each completed extraction-family generation.
+
+    The extraction marker is written last and carries the same extractor
+    version ID as its mentions. A document can intentionally have several
+    extractor families, so the newest marker is selected per document and
+    extractor name. Older versions within each family remain append-only
+    history, but they must not inflate the current public snapshot.
+    """
+    marker_rows = session.execute(
+        select(FactORM, ExtractorVersionORM.name)
+        .join(
+            DocumentORM,
+            (FactORM.subject_table == "documents")
+            & (DocumentORM.id == FactORM.subject_id),
+        )
+        .join(
+            ExtractorVersionORM,
+            ExtractorVersionORM.id == FactORM.extractor_version_id,
+        )
+        .where(
+            FactORM.fact_type == EXTRACTION_MARKER,
+            FactORM.retracted.is_(False),
+            DocumentORM.retracted.is_(False),
+        )
+        .order_by(FactORM.created_at.asc(), FactORM.id.asc())
+    ).all()
+
+    latest_marker_version: dict[tuple[int, str], int] = {}
+    for marker, extractor_name in marker_rows:
+        latest_marker_version[(marker.subject_id, extractor_name)] = (
+            marker.extractor_version_id
+        )
+    if not latest_marker_version:
+        return []
+
+    mention_rows = session.execute(
+        select(MentionORM, ExtractorVersionORM.name)
+        .join(DocumentORM, DocumentORM.id == MentionORM.document_id)
+        .join(
+            ExtractorVersionORM,
+            ExtractorVersionORM.id == MentionORM.extractor_version_id,
+        )
+        .where(MentionORM.retracted.is_(False), DocumentORM.retracted.is_(False))
+    ).all()
+    return [
+        mention
+        for mention, extractor_name in mention_rows
+        if mention.extractor_version_id
+        == latest_marker_version.get((mention.document_id, extractor_name))
+    ]
 
 
 def _daily_counts(session: Session, days: int = DAILY_WINDOW_DAYS) -> list[dict[str, Any]]:
@@ -96,9 +241,10 @@ def bake_country_pages(
     shouldn't download every other country's articles to see it.
     """
     title_by_doc = _latest_fact_values(session, "title")
-    topic_by_doc = _latest_fact_values(session, "topic")
-    escalation_by_doc = _latest_fact_values(session, "escalation")
-    country_by_doc = _latest_fact_values(session, "country")
+    processing = _current_processing(session)
+    topic_by_doc = processing.topics
+    escalation_by_doc = processing.escalations
+    country_by_doc = processing.countries
 
     docs_by_country: dict[str, list[int]] = defaultdict(list)
     for document_id, country in country_by_doc.items():
@@ -189,7 +335,11 @@ def _daily_counts_for(documents: list[DocumentORM], days: int = DAILY_WINDOW_DAY
 TOP_MENTIONS_PER_TYPE = 12
 
 
-def top_mentions(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dict[str, list[dict[str, Any]]]:
+def top_mentions(
+    session: Session,
+    per_type: int = TOP_MENTIONS_PER_TYPE,
+    mentions: list[MentionORM] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     """most mentioned things per object type.
 
     I group by the NORMALIZED surface form so بشار الأسد and بشار الاسد count
@@ -203,20 +353,15 @@ def top_mentions(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dic
     it lands.
     """
     adapter = ArabicAdapter()
-
-    rows = session.execute(
-        select(MentionORM.text, MentionORM.object_type)
-        .join(DocumentORM, DocumentORM.id == MentionORM.document_id)
-        .where(MentionORM.retracted.is_(False), DocumentORM.retracted.is_(False))
-    ).all()
+    mentions = mentions if mentions is not None else _current_live_mentions(session)
 
     # normalized key -> counts, plus a tally of raw spellings so I can show
     # whichever one people actually write most
     grouped: dict[tuple[str, str], Counter] = defaultdict(Counter)
-    for text, object_type in rows:
-        key = adapter.normalize(text)
+    for mention in mentions:
+        key = adapter.normalize(mention.text)
         if key:
-            grouped[(object_type, key)][text] += 1
+            grouped[(mention.object_type, key)][mention.text] += 1
 
     by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for (object_type, _key), spellings in grouped.items():
@@ -229,7 +374,11 @@ def top_mentions(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dic
     }
 
 
-def top_entities(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dict[str, list[dict[str, Any]]]:
+def top_entities(
+    session: Session,
+    per_type: int = TOP_MENTIONS_PER_TYPE,
+    current_mention_ids: set[int] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     """most mentioned RESOLVED entities per type.
 
     the difference from top_mentions is the whole point of M4. that one
@@ -240,6 +389,11 @@ def top_entities(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dic
     rows became one. an entity that silently swallowed four spellings is
     much harder to trust than one that shows its working.
     """
+    if current_mention_ids is None:
+        current_mention_ids = {mention.id for mention in _current_live_mentions(session)}
+    if not current_mention_ids:
+        return {}
+
     rows = session.execute(
         select(
             EntityORM.id,
@@ -249,7 +403,10 @@ def top_entities(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dic
             func.count(EntityMentionORM.mention_id).label("mentions"),
         )
         .join(EntityMentionORM, EntityMentionORM.entity_id == EntityORM.id)
-        .where(EntityORM.retracted.is_(False))
+        .where(
+            EntityORM.retracted.is_(False),
+            EntityMentionORM.mention_id.in_(current_mention_ids),
+        )
         .group_by(EntityORM.id, EntityORM.canonical_name, EntityORM.object_type, EntityORM.properties)
     ).all()
 
@@ -273,7 +430,9 @@ def top_entities(session: Session, per_type: int = TOP_MENTIONS_PER_TYPE) -> dic
 
 
 def pending_review_pairs(
-    session: Session, limit: int = REVIEW_QUEUE_LIMIT
+    session: Session,
+    limit: int = REVIEW_QUEUE_LIMIT,
+    current_mention_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
     """Public evidence for unresolved entity pairs, nearest threshold first.
 
@@ -302,10 +461,14 @@ def pending_review_pairs(
     if not pending:
         return []
 
+    if current_mention_ids is None:
+        current_mention_ids = {mention.id for mention in _current_live_mentions(session)}
+
     mention_ids = {
         mention_id
         for row in pending
         for mention_id in (row.left_mention_id, row.right_mention_id)
+        if mention_id in current_mention_ids
     }
     mentions = session.scalars(
         select(MentionORM).where(
@@ -363,11 +526,15 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
     )
 
     title_by_doc = _latest_fact_values(session, "title")
-    topic_by_doc = _latest_fact_values(session, "topic")
-    escalation_by_doc = _latest_fact_values(session, "escalation")
-    country_by_doc = _latest_fact_values(session, "country")
-
-    total_processed = len(topic_by_doc)  # a document counts as processed once it has a topic fact
+    processing = _current_processing(session)
+    topic_by_doc = processing.topics
+    escalation_by_doc = processing.escalations
+    country_by_doc = processing.countries
+    total_processed = len(processing.document_ids)
+    if total_processed > total_raw:
+        raise ValueError(
+            "public snapshot invariant failed: total_processed cannot exceed total_raw"
+        )
 
     source_rows = session.execute(
         select(DocumentORM.source, func.count().label("count"))
@@ -408,6 +575,17 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
         for doc in recent_rows
     ]
 
+    current_mentions = _current_live_mentions(session)
+    current_mention_ids = {mention.id for mention in current_mentions}
+    current_entity_total = session.scalar(
+        select(func.count(func.distinct(EntityMentionORM.entity_id)))
+        .join(EntityORM, EntityORM.id == EntityMentionORM.entity_id)
+        .where(
+            EntityORM.retracted.is_(False),
+            EntityMentionORM.mention_id.in_(current_mention_ids),
+        )
+    ) if current_mention_ids else 0
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "schema_version": 1,
@@ -421,19 +599,17 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
         "recent": recent,
         "daily": _daily_counts(session),
         "mentions": {
-            "total": session.scalar(
-                select(func.count()).select_from(MentionORM).where(MentionORM.retracted.is_(False))
-            ) or 0,
-            "top": top_mentions(session),
+            "total": len(current_mentions),
+            "top": top_mentions(session, mentions=current_mentions),
         },
         "entities": {
-            "total": session.scalar(
-                select(func.count()).select_from(EntityORM).where(EntityORM.retracted.is_(False))
-            ) or 0,
-            "top": top_entities(session),
+            "total": current_entity_total or 0,
+            "top": top_entities(session, current_mention_ids=current_mention_ids),
         },
         "review_queue": {
-            "items": pending_review_pairs(session),
+            "items": pending_review_pairs(
+                session, current_mention_ids=current_mention_ids
+            ),
         },
     }
 
