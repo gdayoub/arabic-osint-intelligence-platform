@@ -31,8 +31,11 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
+          # This disposable service is reachable only inside its CI job. Trust
+          # avoids runner/image password-state differences and carries no
+          # production credential or persistent data.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
@@ -43,7 +46,7 @@ jobs:
     env:
       # Use IPv4 explicitly. `localhost` may resolve to the runner's IPv6
       # PostgreSQL socket instead of the Docker service's published port.
-      MIGRATION_TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_TEST_DATABASE_URL: postgresql+psycopg2://postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
