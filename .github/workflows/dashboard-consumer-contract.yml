@@ -1,0 +1,78 @@
+name: Dashboard Consumer Contract
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/dashboard-consumer-contract.yml'
+      - 'contracts/dashboard/**'
+      - 'scripts/check_dashboard_consumer.py'
+      - 'scripts/generate_dashboard_contract.py'
+      - 'src/contracts/dashboard.py'
+      - 'tests/unit/test_dashboard_consumer.py'
+      - 'tests/unit/test_dashboard_contract.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dashboard-consumer-contract.yml'
+      - 'contracts/dashboard/**'
+      - 'scripts/check_dashboard_consumer.py'
+      - 'scripts/generate_dashboard_contract.py'
+      - 'src/contracts/dashboard.py'
+      - 'tests/unit/test_dashboard_consumer.py'
+      - 'tests/unit/test_dashboard_contract.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-consumer-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  george-portfolio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out producer
+        uses: actions/checkout@v4
+        with:
+          path: producer
+          persist-credentials: false
+
+      # Keep repository and revision literal here. A pull request must not be
+      # able to redirect this job into running package scripts from an
+      # arbitrary repository by editing only the JSON lock.
+      - name: Check out pinned portfolio consumer
+        uses: actions/checkout@v4
+        with:
+          repository: gdayoub/george-portfolio
+          ref: 203a63b38f53bccfe28e0e53e02e4d0a2c603c4c
+          path: consumer
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify exact vendored contract and public routes
+        working-directory: producer
+        run: python scripts/check_dashboard_consumer.py --consumer-root ../consumer
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: consumer/package-lock.json
+
+      - name: Install pinned portfolio dependencies
+        working-directory: consumer
+        run: npm ci
+
+      - name: Run portfolio OSINT contract test
+        working-directory: consumer
+        run: npm run test:osint-contract
+
+      - name: Build the pinned portfolio
+        working-directory: consumer
+        run: npm run build

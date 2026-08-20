@@ -35,3 +35,19 @@ The producer preserves external text exactly, including HTML-sensitive
 characters. Browser consumers must render those strings as text, never as
 trusted markup. Source URLs are the exception: the producer rejects anything
 except safe absolute HTTP(S) links and also rejects raw attribute delimiters.
+
+## Pinned portfolio consumer
+
+`consumers/george-portfolio.lock.json` records the exact portfolio commit that
+accepts this bundle. Verify a checked-out copy locally with:
+
+```bash
+python scripts/check_dashboard_consumer.py --consumer-root ../george-portfolio
+```
+
+The check compares every vendored contract file byte-for-byte, confirms the
+consumer lock, and preserves both the `/osint-dashboard.html` public route and
+the Cloudflare `data.json` source. The GitHub workflow then runs the portfolio's
+own OSINT contract test and production build. Update the JSON lock and the
+workflow's literal checkout revision together so a pull request cannot redirect
+CI to arbitrary package scripts through a data-only change.

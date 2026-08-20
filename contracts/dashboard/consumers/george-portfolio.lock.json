@@ -1,0 +1,22 @@
+{
+  "bundle_sha256": "df38f614b6bcd210e2ec061031a61245dba361e367a965123c7b1221bb3d7128",
+  "consumer": {
+    "commit": "203a63b38f53bccfe28e0e53e02e4d0a2c603c4c",
+    "contract_lock": "contracts/dashboard/consumer.lock.json",
+    "contract_test": "npm run test:osint-contract",
+    "repository": "https://github.com/gdayoub/george-portfolio.git"
+  },
+  "contract": "dashboard",
+  "contract_version": "1.0.0",
+  "dashboard_data_url": "https://arabic-osint-dashboard.georgedayoub500.workers.dev/data.json",
+  "manifest": "1.0.0/manifest.json",
+  "manifest_sha256": "37fb81ff81411819b05bef46571f0ce59af7febb0f9660f96f16950bb7a43ead",
+  "producer_contract_commit": "d650feb1446cc6154d8a348246d01c02443f23b3",
+  "public_route": "/osint-dashboard.html",
+  "public_url": "https://george-dayoub-portfolio.vercel.app/osint-dashboard.html",
+  "required_data_consumers": [
+    "app/api/osint/route.ts",
+    "public/osint-dashboard.html"
+  ],
+  "schema_version": 1
+}
