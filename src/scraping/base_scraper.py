@@ -6,6 +6,7 @@ import logging
 import random
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
 
 import requests
@@ -14,6 +15,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from src.config.settings import SETTINGS, Settings
+from src.ops.events import PipelineReasonCode
 from src.scraping.scraper_utils import ArticleRecord, canonicalize_url
 
 
@@ -69,7 +71,9 @@ class BaseScraper(ABC):
         self.min_body_chars = self.settings.min_article_body_chars
         self.logger = logging.getLogger(f"scraper.{source_name}")
         self.session = self._build_session()
-        self.last_scrape_stats: dict[str, int] = self._empty_scrape_stats()
+        self.last_scrape_stats: dict[str, int | str | datetime | None] = (
+            self._empty_scrape_stats()
+        )
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
@@ -205,6 +209,7 @@ class BaseScraper(ABC):
                 continue
             visited_listing.add(listing_url)
 
+            stats["listing_pages_attempted"] += 1
             listing_html, status_code, final_url = self.fetch_page(listing_url)
             final_listing_url = self._normalize_listing_url(final_url)
             if final_listing_url not in visited_listing:
@@ -235,9 +240,22 @@ class BaseScraper(ABC):
 
             stats["listing_pages_valid_visited"] += 1
             stats["listing_pages_visited"] += 1
-            links = self.extract_article_links(listing_html)
+            selector_failed = False
+            try:
+                links = self.extract_article_links(listing_html)
+            except Exception:
+                # The exception stays in private runner logs.  Returned source
+                # telemetry only exposes the closed reason code derived below.
+                self.logger.exception(
+                    "%s article-link selector failed on a listing page",
+                    self.source_name,
+                )
+                links = []
+                selector_failed = True
+
             stats["article_links_found"] += len(links)
 
+            valid_links_on_page = 0
             for link in links:
                 article_url = canonicalize_url(self._to_absolute_url(link))
                 if not article_url:
@@ -246,13 +264,34 @@ class BaseScraper(ABC):
                     continue
                 if not self.is_valid_article_url(article_url):
                     continue
+                valid_links_on_page += 1
                 if article_url in seen_links:
                     continue
                 seen_links.add(article_url)
                 unique_candidate_links.append(article_url)
 
+            if valid_links_on_page == 0:
+                stats["listing_pages_without_article_links"] += 1
+                # A fetched listing page that produces no valid article link
+                # is the observable signature of a stale selector.  Count it
+                # even when the selector returned normally: most selector
+                # breakages are empty matches, not Python exceptions.
+                stats["selector_failure_count"] += 1
+            elif selector_failed:
+                # Defensive only: a failed extractor currently cannot produce
+                # valid links, but keep the counters correct if that changes.
+                stats["selector_failure_count"] += 1
+
             if self.settings.scrape_archives_enabled:
-                listing_links = self.extract_listing_links(final_url, listing_html)
+                try:
+                    listing_links = self.extract_listing_links(final_url, listing_html)
+                except Exception:
+                    self.logger.exception(
+                        "%s listing-pagination selector failed",
+                        self.source_name,
+                    )
+                    listing_links = []
+                    stats["selector_failure_count"] += 1
                 for next_link in listing_links:
                     candidate = self._normalize_listing_url(self._to_absolute_url(next_link))
                     if not candidate:
@@ -282,8 +321,20 @@ class BaseScraper(ABC):
                 stats["article_pages_failed"] += 1
                 continue
 
-            article = self.parse_article(article_url, article_html)
+            try:
+                article = self.parse_article(article_url, article_html)
+            except Exception:
+                # One malformed article must not discard the healthy articles
+                # already produced by this source run.
+                self.logger.exception(
+                    "%s article parser failed",
+                    self.source_name,
+                )
+                stats["parsing_failure_count"] += 1
+                continue
+
             if not article or not article.body or not article.title:
+                stats["parsing_failure_count"] += 1
                 continue
 
             if len(article.body.strip()) < self.min_body_chars:
@@ -292,21 +343,35 @@ class BaseScraper(ABC):
 
             records.append(article)
             stats["articles_scraped"] += 1
+            published_at = self._as_utc(article.published_date)
+            latest_at = stats["latest_successful_article_at"]
+            if published_at is not None and (
+                latest_at is None or published_at > latest_at
+            ):
+                stats["latest_successful_article_at"] = published_at
             self._polite_delay()
 
+        stats["reason_code"] = self._reason_code_for_stats(stats)
         self.last_scrape_stats = stats
         self.logger.info(
-            "%s valid_listing_pages=%d invalid_listing_pages=%d links_found=%d unique_links=%d scraped=%d",
+            "%s listing_attempts=%d valid_listing_pages=%d invalid_listing_pages=%d "
+            "zero_link_pages=%d article_attempts=%d unique_links=%d scraped=%d "
+            "selector_failures=%d parser_failures=%d reason_code=%s",
             self.source_name,
+            stats["listing_pages_attempted"],
             stats["listing_pages_valid_visited"],
             stats["listing_pages_invalid_skipped"],
-            stats["article_links_found"],
+            stats["listing_pages_without_article_links"],
+            stats["article_pages_attempted"],
             stats["unique_article_links"],
             stats["articles_scraped"],
+            stats["selector_failure_count"],
+            stats["parsing_failure_count"],
+            stats["reason_code"],
         )
         return records
 
-    def get_last_scrape_stats(self) -> dict[str, int]:
+    def get_last_scrape_stats(self) -> dict[str, int | str | datetime | None]:
         return dict(self.last_scrape_stats)
 
     @staticmethod
@@ -333,18 +398,51 @@ class BaseScraper(ABC):
         return urlunsplit((split.scheme, split.netloc.lower(), path, split.query, ""))
 
     @staticmethod
-    def _empty_scrape_stats() -> dict[str, int]:
+    def _empty_scrape_stats() -> dict[str, int | str | datetime | None]:
         return {
             "listing_pages_planned": 0,
             "listing_pages_discovered": 0,
+            "listing_pages_attempted": 0,
             "listing_pages_visited": 0,
             "listing_pages_failed": 0,
             "listing_pages_valid_visited": 0,
             "listing_pages_invalid_skipped": 0,
+            "listing_pages_without_article_links": 0,
             "article_links_found": 0,
             "unique_article_links": 0,
             "article_pages_attempted": 0,
             "article_pages_failed": 0,
             "articles_scraped": 0,
             "short_body_skipped": 0,
+            "selector_failure_count": 0,
+            "parsing_failure_count": 0,
+            "latest_successful_article_at": None,
+            "reason_code": None,
         }
+
+    @staticmethod
+    def _as_utc(value: datetime | None) -> datetime | None:
+        """Normalize a successfully parsed publication time for comparison."""
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def _reason_code_for_stats(
+        stats: dict[str, int | str | datetime | None],
+    ) -> str | None:
+        """Classify observations without returning private failure detail."""
+        if int(stats["parsing_failure_count"] or 0) > 0:
+            return PipelineReasonCode.SOURCE_PARSE_FAILED.value
+        if int(stats["selector_failure_count"] or 0) > 0:
+            return PipelineReasonCode.SOURCE_SELECTOR_FAILED.value
+        fetch_failure_count = int(stats["listing_pages_failed"] or 0) + int(
+            stats["article_pages_failed"] or 0
+        )
+        if fetch_failure_count > 0:
+            return PipelineReasonCode.SOURCE_FETCH_FAILED.value
+        if int(stats["articles_scraped"] or 0) == 0:
+            return PipelineReasonCode.SOURCE_ZERO_YIELD.value
+        return None

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
+
 import pytest
 
 from src.config.settings import Settings
@@ -76,6 +78,25 @@ def test_get_blob_store_r2_with_all_creds_set():
     )
     store = get_blob_store(settings)
     assert isinstance(store, R2BlobStore)
+
+
+def test_r2_put_forwards_the_callers_content_type():
+    store = object.__new__(R2BlobStore)
+    store._bucket = "test-bucket"
+    store._client = Mock()
+
+    store.put(
+        "v1/releases/example.json",
+        b"{}\n",
+        content_type="application/json; charset=utf-8",
+    )
+
+    store._client.put_object.assert_called_once_with(
+        Bucket="test-bucket",
+        Key="v1/releases/example.json",
+        Body=b"{}\n",
+        ContentType="application/json; charset=utf-8",
+    )
 
 
 def test_get_blob_store_r2_missing_creds_raises_with_var_names():

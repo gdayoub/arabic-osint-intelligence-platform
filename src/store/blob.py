@@ -30,7 +30,13 @@ KEY_PREFIX = "v1/documents"
 
 
 class BlobStore(Protocol):
-    def put(self, key: str, data: bytes) -> None: ...
+    def put(
+        self,
+        key: str,
+        data: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+    ) -> None: ...
 
     def get(self, key: str) -> bytes:
         """Raise KeyError if `key` doesn't exist — never a backend-specific exception."""
@@ -52,7 +58,16 @@ class LocalDiskBlobStore:
     def _path(self, key: str) -> Path:
         return self._root / key
 
-    def put(self, key: str, data: bytes) -> None:
+    def put(
+        self,
+        key: str,
+        data: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        # Local files do not carry HTTP metadata.  Keeping the keyword in the
+        # interface lets the exact same caller send correct metadata to R2.
+        del content_type
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
         # Write to a sibling temp file, then rename. os.replace() is atomic on
@@ -91,8 +106,19 @@ class R2BlobStore:
             config=Config(signature_version="s3v4", retries={"max_attempts": 5, "mode": "standard"}),
         )
 
-    def put(self, key: str, data: bytes) -> None:
-        self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType="application/gzip")
+    def put(
+        self,
+        key: str,
+        data: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        self._client.put_object(
+            Bucket=self._bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+        )
 
     def get(self, key: str) -> bytes:
         try:

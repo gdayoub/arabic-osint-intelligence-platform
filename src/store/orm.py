@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -23,15 +24,19 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from src.ops.events import PIPELINE_EVENT_TYPES, PIPELINE_REASON_CODES
 
 # Plain JSON on SQLite (what the unit tests run against), JSONB on Postgres —
 # JSONB stores text natively rather than as an escaped string, so it sidesteps
 # the ensure_ascii inflation problem for free and is a prerequisite for ever
 # indexing inside these columns.
 PortableJSON = JSON().with_variant(JSONB, "postgresql")
+PortableEventId = BigInteger().with_variant(Integer, "sqlite")
 
 
 class CoreBase(DeclarativeBase):
@@ -233,3 +238,225 @@ class ProvenanceORM(CoreBase):
     mention_id: Mapped[int | None] = mapped_column(ForeignKey("mentions.id"), nullable=True)
     extractor_version_id: Mapped[int] = mapped_column(ForeignKey("extractor_versions.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+def _quoted_values(values: tuple[str, ...]) -> str:
+    """Render fixed Python constants as a SQL CHECK list."""
+    return ", ".join(f"'{value}'" for value in values)
+
+
+class PipelineEventORM(CoreBase):
+    """One immutable observation about a pipeline run.
+
+    A run's terminal state cannot safely be stored by updating its start row:
+    a killed process cannot perform that update.  Start, heartbeat, terminal,
+    stage, and source observations are therefore separate append-only rows.
+    Current health is reconstructed from the ordered stream.
+    """
+
+    __tablename__ = "pipeline_events"
+    __table_args__ = (
+        CheckConstraint(
+            f"event_type IN ({_quoted_values(PIPELINE_EVENT_TYPES)})",
+            name="ck_pipeline_event_type",
+        ),
+        CheckConstraint(
+            "reason_code IS NULL OR "
+            f"reason_code IN ({_quoted_values(PIPELINE_REASON_CODES)})",
+            name="ck_pipeline_event_reason_code",
+        ),
+        CheckConstraint(
+            "input_count IS NULL OR input_count >= 0",
+            name="ck_pipeline_event_input_count",
+        ),
+        CheckConstraint(
+            "output_count IS NULL OR output_count >= 0",
+            name="ck_pipeline_event_output_count",
+        ),
+        CheckConstraint(
+            "error_count IS NULL OR error_count >= 0",
+            name="ck_pipeline_event_error_count",
+        ),
+        CheckConstraint(
+            "attempt_count IS NULL OR attempt_count >= 0",
+            name="ck_pipeline_event_attempt_count",
+        ),
+        CheckConstraint(
+            "inserted_count IS NULL OR inserted_count >= 0",
+            name="ck_pipeline_event_inserted_count",
+        ),
+        CheckConstraint(
+            "selector_failure_count IS NULL OR selector_failure_count >= 0",
+            name="ck_pipeline_event_selector_failure_count",
+        ),
+        CheckConstraint(
+            "parsing_failure_count IS NULL OR parsing_failure_count >= 0",
+            name="ck_pipeline_event_parsing_failure_count",
+        ),
+        CheckConstraint(
+            "data_sequence IS NULL OR data_sequence > 0",
+            name="ck_pipeline_event_data_sequence",
+        ),
+        CheckConstraint(
+            "promotion_sequence IS NULL OR promotion_sequence > 0",
+            name="ck_pipeline_event_promotion_sequence",
+        ),
+        CheckConstraint(
+            "rollback_of_promotion_sequence IS NULL "
+            "OR rollback_of_promotion_sequence > 0",
+            name="ck_pipeline_event_rollback_promotion_sequence",
+        ),
+        UniqueConstraint("event_key", name="uq_pipeline_events_event_key"),
+        Index("ix_pipeline_events_run_time", "run_id", "occurred_at", "id"),
+        Index("ix_pipeline_events_stage", "stage", "occurred_at"),
+        Index("ix_pipeline_events_source", "source", "occurred_at"),
+        Index("ix_pipeline_events_data_sequence", "data_sequence"),
+        Index("ix_pipeline_events_promotion_sequence", "promotion_sequence"),
+    )
+
+    # PostgreSQL BIGINT leaves ample room for a long-lived event stream.  The
+    # SQLite variant must be exactly INTEGER for rowid autoincrement semantics.
+    id: Mapped[int] = mapped_column(PortableEventId, primary_key=True, autoincrement=True)
+    event_key: Mapped[str] = mapped_column(String(180))
+    run_id: Mapped[str] = mapped_column(String(100), index=True)
+    release_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(32))
+    commit_sha: Mapped[str] = mapped_column(String(64))
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    input_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    attempt_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    inserted_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    selector_failure_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parsing_failure_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latest_successful_article_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    extractor_versions: Mapped[dict[str, str]] = mapped_column(PortableJSON, default=dict)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    data_sequence: Mapped[int | None] = mapped_column(PortableEventId, nullable=True)
+    promotion_sequence: Mapped[int | None] = mapped_column(PortableEventId, nullable=True)
+    manifest_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rollback_of_promotion_sequence: Mapped[int | None] = mapped_column(
+        PortableEventId, nullable=True
+    )
+
+
+class PublicationStateORM(CoreBase):
+    """Rebuildable singleton containing the publication high-water marks.
+
+    Unlike ``PipelineEventORM``, this row is intentionally mutable.  It is a
+    compare-and-publish coordination record and cache; the event stream and
+    immutable manifests remain the audit source of truth.
+    """
+
+    __tablename__ = "publication_state"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_publication_state_singleton"),
+        CheckConstraint(
+            "max_data_sequence_seen >= 0",
+            name="ck_publication_state_max_data_sequence",
+        ),
+        CheckConstraint(
+            "promotion_sequence >= 0",
+            name="ck_publication_state_promotion_sequence",
+        ),
+        CheckConstraint(
+            "current_data_sequence IS NULL "
+            "OR current_data_sequence <= max_data_sequence_seen",
+            name="ck_publication_state_current_below_high_water",
+        ),
+        CheckConstraint(
+            "current_data_sequence IS NULL OR current_data_sequence > 0",
+            name="ck_publication_state_current_data_positive",
+        ),
+        CheckConstraint(
+            "pending_data_sequence IS NULL OR pending_data_sequence > 0",
+            name="ck_publication_state_pending_data_positive",
+        ),
+        CheckConstraint(
+            "pending_promotion_sequence IS NULL "
+            "OR pending_promotion_sequence > promotion_sequence",
+            name="ck_publication_state_pending_promotion_newer",
+        ),
+        CheckConstraint(
+            "pending_rollback_of_promotion_sequence IS NULL "
+            "OR pending_rollback_of_promotion_sequence = promotion_sequence",
+            name="ck_publication_state_rollback_targets_current",
+        ),
+        CheckConstraint(
+            "((current_release_id IS NULL AND current_manifest_key IS NULL "
+            "AND current_manifest_sha256 IS NULL AND current_data_sequence IS NULL) "
+            "OR (current_release_id IS NOT NULL AND current_manifest_key IS NOT NULL "
+            "AND current_manifest_sha256 IS NOT NULL "
+            "AND current_data_sequence IS NOT NULL))",
+            name="ck_publication_state_current_complete",
+        ),
+        CheckConstraint(
+            "((pending_release_id IS NULL AND pending_run_id IS NULL "
+            "AND pending_commit_sha IS NULL AND pending_manifest_key IS NULL "
+            "AND pending_manifest_sha256 IS NULL AND pending_data_sequence IS NULL "
+            "AND pending_promotion_sequence IS NULL "
+            "AND pending_rollback_of_promotion_sequence IS NULL) "
+            "OR (pending_release_id IS NOT NULL AND pending_run_id IS NOT NULL "
+            "AND pending_commit_sha IS NOT NULL AND pending_manifest_key IS NOT NULL "
+            "AND pending_manifest_sha256 IS NOT NULL "
+            "AND pending_data_sequence IS NOT NULL "
+            "AND pending_promotion_sequence IS NOT NULL))",
+            name="ck_publication_state_pending_complete",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    current_release_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    current_manifest_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    current_manifest_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_data_sequence: Mapped[int | None] = mapped_column(
+        PortableEventId, nullable=True
+    )
+    max_data_sequence_seen: Mapped[int] = mapped_column(PortableEventId, default=0)
+    promotion_sequence: Mapped[int] = mapped_column(PortableEventId, default=0)
+
+    pending_release_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    pending_run_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    pending_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pending_manifest_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    pending_manifest_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pending_data_sequence: Mapped[int | None] = mapped_column(
+        PortableEventId, nullable=True
+    )
+    pending_promotion_sequence: Mapped[int | None] = mapped_column(
+        PortableEventId, nullable=True
+    )
+    pending_rollback_of_promotion_sequence: Mapped[int | None] = mapped_column(
+        PortableEventId, nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+
+class AppendOnlyEventError(RuntimeError):
+    """Raised when ORM code tries to mutate an operational event."""
+
+
+@event.listens_for(PipelineEventORM, "before_update")
+def _reject_pipeline_event_update(_mapper, _connection, _target) -> None:  # noqa: ANN001
+    raise AppendOnlyEventError("pipeline_events is append-only; append a new event")
+
+
+@event.listens_for(PipelineEventORM, "before_delete")
+def _reject_pipeline_event_delete(_mapper, _connection, _target) -> None:  # noqa: ANN001
+    raise AppendOnlyEventError("pipeline_events is append-only; events cannot be deleted")

@@ -75,7 +75,11 @@ def create_document(
     sha256 = sha256_text(text)
     key = text_blob_key(sha256)
     if not blob_store.exists(key):
-        blob_store.put(key, compress_text(text))
+        blob_store.put(
+            key,
+            compress_text(text),
+            content_type="application/gzip",
+        )
 
     row = DocumentORM(
         source=source,

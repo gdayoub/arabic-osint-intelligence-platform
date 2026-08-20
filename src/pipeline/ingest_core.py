@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from src.config.settings import SETTINGS
 from src.core.models import Document, ExtractorVersion
 from src.core.ontology import Ontology
 from src.database.crud import canonicalize_url, compute_content_hash
+from src.ops.events import PipelineReasonCode
 from src.scraping.alarabiya_scraper import AlArabiyaScraper
 from src.scraping.aljazeera_scraper import AlJazeeraScraper
 from src.scraping.base_scraper import BaseScraper
@@ -74,6 +76,111 @@ class IngestCoreStats:
     inserted: int = 0
     skipped_existing: int = 0
     sources: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+_DEGRADED_SOURCE_REASONS = {
+    PipelineReasonCode.SOURCE_SELECTOR_FAILED,
+    PipelineReasonCode.SOURCE_PARSE_FAILED,
+    PipelineReasonCode.SOURCE_ZERO_YIELD,
+    PipelineReasonCode.DATA_STALE,
+}
+
+
+def _nonnegative_scrape_count(scrape_stats: dict[str, Any], key: str) -> int:
+    """Read one scraper counter without trusting arbitrary result types."""
+    value = scrape_stats.get(key, 0)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def _safe_scrape_reason(value: object, *, yielded_count: int) -> PipelineReasonCode | None:
+    """Return a closed reason code even if a custom scraper misbehaves."""
+    if value is None:
+        if yielded_count == 0:
+            return PipelineReasonCode.SOURCE_ZERO_YIELD
+        return None
+
+    try:
+        reason = PipelineReasonCode(value)
+    except (TypeError, ValueError):
+        return PipelineReasonCode.UNEXPECTED_ERROR
+
+    if yielded_count > 0 and reason == PipelineReasonCode.SOURCE_ZERO_YIELD:
+        return PipelineReasonCode.UNEXPECTED_ERROR
+    return reason
+
+
+def _source_status(reason: PipelineReasonCode | None) -> str:
+    if reason is None:
+        return "success"
+    if reason in _DEGRADED_SOURCE_REASONS:
+        return "degraded"
+    return "failed"
+
+
+def _latest_publication_time(value: object) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _source_result(
+    *,
+    scrape_stats: dict[str, Any],
+    yielded_count: int,
+    inserted_count: int,
+    skipped_existing_count: int,
+    reason: PipelineReasonCode | None,
+) -> dict[str, Any]:
+    """Build the public-safe per-source ingestion result.
+
+    The older ``scraped``/``inserted`` keys remain as compatibility aliases.
+    The explicit names line up with the operational ledger and make a
+    duplicate-only run (yielded > 0, inserted = 0) unambiguous.
+    """
+    listing_failed = _nonnegative_scrape_count(scrape_stats, "listing_pages_failed")
+    article_fetch_failed = _nonnegative_scrape_count(
+        scrape_stats, "article_pages_failed"
+    )
+    selector_failed = _nonnegative_scrape_count(
+        scrape_stats, "selector_failure_count"
+    )
+    parsing_failed = _nonnegative_scrape_count(
+        scrape_stats, "parsing_failure_count"
+    )
+
+    return {
+        "status": _source_status(reason),
+        "listing_attempt_count": _nonnegative_scrape_count(
+            scrape_stats, "listing_pages_attempted"
+        ),
+        "listing_zero_link_count": _nonnegative_scrape_count(
+            scrape_stats, "listing_pages_without_article_links"
+        ),
+        "article_attempt_count": _nonnegative_scrape_count(
+            scrape_stats, "article_pages_attempted"
+        ),
+        "article_yield_count": yielded_count,
+        "inserted_count": inserted_count,
+        "skipped_existing_count": skipped_existing_count,
+        "selector_failure_count": selector_failed,
+        "parsing_failure_count": parsing_failed,
+        "fetch_failure_count": listing_failed + article_fetch_failed,
+        "error_count": (
+            listing_failed + article_fetch_failed + selector_failed + parsing_failed
+        ),
+        "latest_successful_article_at": _latest_publication_time(
+            scrape_stats.get("latest_successful_article_at")
+        ),
+        "reason_code": reason.value if reason is not None else None,
+        # Compatibility aliases used by the existing CLI output.
+        "scraped": yielded_count,
+        "inserted": inserted_count,
+        "skipped_existing": skipped_existing_count,
+    }
 
 
 def ingest_article(
@@ -140,8 +247,11 @@ def run_core_ingestion(limit_per_source: int | None = None, blob_store: BlobStor
             extractor_version = register_extractor_version(session, scraper.NAME, scraper.VERSION)
             source_inserted = 0
             source_skipped = 0
+            articles = []
+            scrape_stats: dict[str, Any] = {}
             try:
                 articles = scraper.scrape(limit=limit)
+                scrape_stats = scraper.get_last_scrape_stats()
                 logger.info("Source %s returned %d articles", scraper.source_name, len(articles))
 
                 for article in articles:
@@ -154,21 +264,30 @@ def run_core_ingestion(limit_per_source: int | None = None, blob_store: BlobStor
                         stats.skipped_existing += 1
                         source_skipped += 1
 
-                stats.sources[scraper.source_name] = {
-                    "status": "success" if articles else "no_articles",
-                    "scraped": len(articles),
-                    "inserted": source_inserted,
-                    "skipped_existing": source_skipped,
-                    "error": None,
-                }
-            except Exception as exc:
-                logger.exception("Source failure for %s: %s", scraper.source_name, exc)
-                stats.sources[scraper.source_name] = {
-                    "status": "failed",
-                    "scraped": 0,
-                    "inserted": source_inserted,
-                    "skipped_existing": source_skipped,
-                    "error": str(exc),
-                }
+                reason = _safe_scrape_reason(
+                    scrape_stats.get("reason_code"), yielded_count=len(articles)
+                )
+                stats.sources[scraper.source_name] = _source_result(
+                    scrape_stats=scrape_stats,
+                    yielded_count=len(articles),
+                    inserted_count=source_inserted,
+                    skipped_existing_count=source_skipped,
+                    reason=reason,
+                )
+            except Exception:
+                # Detailed exceptions stay in the private job log.  The
+                # returned result is deliberately limited to a closed code.
+                logger.exception("Source failure for %s", scraper.source_name)
+                try:
+                    scrape_stats = scraper.get_last_scrape_stats()
+                except Exception:
+                    scrape_stats = {}
+                stats.sources[scraper.source_name] = _source_result(
+                    scrape_stats=scrape_stats,
+                    yielded_count=len(articles),
+                    inserted_count=source_inserted,
+                    skipped_existing_count=source_skipped,
+                    reason=PipelineReasonCode.UNEXPECTED_ERROR,
+                )
 
     return stats
