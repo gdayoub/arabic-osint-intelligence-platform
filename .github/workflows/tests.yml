@@ -41,7 +41,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      MIGRATION_TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/postgres
+      # Use IPv4 explicitly. `localhost` may resolve to the runner's IPv6
+      # PostgreSQL socket instead of the Docker service's published port.
+      MIGRATION_TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
