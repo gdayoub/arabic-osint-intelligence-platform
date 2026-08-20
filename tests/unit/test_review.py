@@ -101,6 +101,24 @@ def test_near_threshold_pair_is_queued_with_two_provenance_rows(
     assert len(session.scalars(select(ReviewPairORM)).all()) == 1
 
 
+def test_closest_pair_fills_queue_when_uncertainty_band_is_empty(
+    session, ontology, blob_store
+):
+    """Production regression: the first live run created zero review rows."""
+    _make_mentions(session, blob_store, ontology, ["جورج دايوب", "جورج داوب"])
+
+    stats = resolve_all(
+        session,
+        ontology,
+        scorer=FixedScorer(0.10),
+        review_margin=0.01,
+        review_limit=1,
+    )
+
+    assert stats.review_pairs_queued == 1
+    assert session.scalar(select(ReviewPairORM)).score == 0.10
+
+
 def test_accepting_queue_pair_is_append_only_and_applies_on_next_resolution(
     session, ontology, blob_store
 ):

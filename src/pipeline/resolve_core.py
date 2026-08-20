@@ -179,9 +179,12 @@ def resolve_all(
     max_block_size: int = 100,
     gazetteer: GazetteerExtractor | None = None,
     review_margin: float = 0.15,
+    review_limit: int = 20,
 ) -> ResolveStats:
     if review_margin < 0:
         raise ValueError("review_margin must be non-negative")
+    if review_limit < 0:
+        raise ValueError("review_limit must be non-negative")
     adapter = adapter or ArabicAdapter()
     scorer = scorer or PairScorer()
     gazetteer = gazetteer if gazetteer is not None else GazetteerExtractor()
@@ -296,6 +299,7 @@ def resolve_all(
 
     scores: dict[tuple[int, int], float] = {}
     matched: set[tuple[int, int]] = set(accepted_pairs)
+    scored_candidates = []
     for a, b in candidates:
         ca, cb = contexts[a], contexts[b]
         # never merge across object types. a person and a place sharing a
@@ -306,19 +310,47 @@ def resolve_all(
         probability = scorer.probability(features)
         pair = ordered_pair(a, b)
         scores[pair] = probability
-        if abs(probability - scorer.weights.threshold) <= review_margin:
-            if enqueue_review_pair(
-                session,
-                ca,
-                cb,
-                probability,
-                scorer.weights.threshold,
-                features,
-                resolver_version,
-            ):
-                stats.review_pairs_queued += 1
+        scored_candidates.append((ca, cb, probability, features))
         if probability >= scorer.weights.threshold and pair not in rejected_pairs:
             matched.add(pair)
+
+    # A fixed uncertainty band can be empty when a poorly calibrated model
+    # is confidently wrong about the whole production distribution.  That is
+    # exactly when labels are most valuable.  Prefer pairs inside the band,
+    # then fill the remaining review budget with the closest scores outside
+    # it so the queue can never be empty while candidates exist.
+    ranked_for_review = sorted(
+        scored_candidates,
+        key=lambda item: abs(item[2] - scorer.weights.threshold),
+    )
+    in_band = [
+        item
+        for item in ranked_for_review
+        if abs(item[2] - scorer.weights.threshold) <= review_margin
+    ]
+    selected_for_review = in_band[:review_limit]
+    if len(selected_for_review) < review_limit:
+        selected_ids = {(item[0].mention_id, item[1].mention_id) for item in selected_for_review}
+        for item in ranked_for_review:
+            pair_ids = (item[0].mention_id, item[1].mention_id)
+            if pair_ids in selected_ids:
+                continue
+            selected_for_review.append(item)
+            selected_ids.add(pair_ids)
+            if len(selected_for_review) >= review_limit:
+                break
+
+    for ca, cb, probability, features in selected_for_review:
+        if enqueue_review_pair(
+            session,
+            ca,
+            cb,
+            probability,
+            scorer.weights.threshold,
+            features,
+            resolver_version,
+        ):
+            stats.review_pairs_queued += 1
 
     for pair in accepted_pairs:
         scores[pair] = 1.0
@@ -373,9 +405,17 @@ def resolve_all(
     return stats
 
 
-def run_core_resolution(max_block_size: int = 100, review_margin: float = 0.15) -> ResolveStats:
+def run_core_resolution(
+    max_block_size: int = 100,
+    review_margin: float = 0.15,
+    review_limit: int = 20,
+) -> ResolveStats:
     ontology = Ontology.from_yaml(_ONTOLOGY_PATH)
     with get_core_session() as session:
         return resolve_all(
-            session, ontology, max_block_size=max_block_size, review_margin=review_margin
+            session,
+            ontology,
+            max_block_size=max_block_size,
+            review_margin=review_margin,
+            review_limit=review_limit,
         )

@@ -58,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.15,
         help="Queue pairs within this distance of the scorer threshold",
     )
+    resolve_parser.add_argument(
+        "--review-limit",
+        type=int,
+        default=20,
+        help="Maximum pairs queued per scorer version; nearest pairs fill an empty uncertainty band",
+    )
 
     review_parser = sub.add_parser("review", help="Human review and manual resolution controls (M4)")
     review_sub = review_parser.add_subparsers(dest="review_command", required=True)
@@ -156,7 +162,9 @@ def main() -> None:
         )
     elif args.command == "resolve-core":
         stats = run_core_resolution(
-            max_block_size=args.max_block_size, review_margin=args.review_margin
+            max_block_size=args.max_block_size,
+            review_margin=args.review_margin,
+            review_limit=args.review_limit,
         )
         print(
             f"mentions={stats.mentions} distinct_forms={stats.exact_duplicate_groups} "

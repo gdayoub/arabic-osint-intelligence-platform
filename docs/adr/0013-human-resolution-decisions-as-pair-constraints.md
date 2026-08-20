@@ -27,10 +27,14 @@ which retracts the current generation and builds another one.
 
 ## Decision
 
-`review_pairs` stores immutable snapshots of blocking-surviving pairs whose
-score is within 0.15 of the current threshold.  Each snapshot records the two
-mention IDs, object type, score, threshold, all six feature values, and scorer
-version.  Two provenance rows connect it to the exact source spans.
+`review_pairs` stores immutable snapshots of blocking-surviving pairs.  The
+resolver prefers scores within 0.15 of the current threshold, then fills a
+20-pair review budget with the closest remaining scores.  A fixed band alone
+can be empty when a poorly calibrated model is confidently wrong about the
+whole production distribution; that is exactly when labels are most useful.
+Each snapshot records the two mention IDs, object type, score, threshold, all
+six feature values, and scorer version.  Two provenance rows connect it to the
+exact source spans.
 
 `resolution_decisions` stores the human answer separately.  Rows are never
 updated.  A corrected answer appends another row whose `supersedes_id` points
