@@ -53,6 +53,20 @@ def test_single_linkage_chains_two_different_people_together():
     assert result.clusters == [[1, 2, 3]], "single linkage chains, as expected"
 
 
+def test_cannot_link_blocks_an_indirect_union_find_chain():
+    """A human split must survive A-B-C transitive closure."""
+    scores = {(1, 2): 0.9, (2, 3): 0.8, (1, 3): 0.1}
+
+    result = cluster_pairs(
+        [1, 2, 3],
+        [(1, 2), (2, 3)],
+        similarity=lambda a, b: scores[tuple(sorted((a, b)))],
+        cannot_link_pairs=[(1, 3)],
+    )
+
+    assert sorted(sorted(cluster) for cluster in result.clusters) == [[1, 2], [3]]
+
+
 def test_complete_linkage_refuses_to_chain():
     """same three mentions, but now a member has to match every other member.
 

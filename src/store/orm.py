@@ -111,6 +111,64 @@ class EntityMentionORM(CoreBase):
     mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), primary_key=True)
 
 
+class ReviewPairORM(CoreBase):
+    """A scored blocking-surviving pair offered for human review.
+
+    Queue rows are immutable model snapshots.  The decision lives in
+    ResolutionDecisionORM so changing one's mind appends a new fact instead
+    of overwriting the old answer.
+    """
+
+    __tablename__ = "review_pairs"
+    __table_args__ = (
+        CheckConstraint("right_mention_id > left_mention_id", name="ck_review_pair_order"),
+        UniqueConstraint(
+            "left_mention_id",
+            "right_mention_id",
+            "scorer_version_id",
+            name="uq_review_pair_mentions_scorer",
+        ),
+        Index("ix_review_pairs_score", "score"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    left_mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), index=True)
+    right_mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), index=True)
+    object_type: Mapped[str] = mapped_column(String(50), index=True)
+    score: Mapped[float] = mapped_column(Float)
+    threshold: Mapped[float] = mapped_column(Float)
+    features: Mapped[dict[str, Any]] = mapped_column(PortableJSON)
+    scorer_version_id: Mapped[int] = mapped_column(ForeignKey("extractor_versions.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ResolutionDecisionORM(CoreBase):
+    """Append-only human must-link or cannot-link decision for two mentions."""
+
+    __tablename__ = "resolution_decisions"
+    __table_args__ = (
+        CheckConstraint("right_mention_id > left_mention_id", name="ck_resolution_decision_pair_order"),
+        CheckConstraint("decision IN ('same', 'different')", name="ck_resolution_decision_value"),
+        Index("ix_resolution_decisions_pair", "left_mention_id", "right_mention_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    review_pair_id: Mapped[int | None] = mapped_column(
+        ForeignKey("review_pairs.id"), nullable=True, index=True
+    )
+    left_mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), index=True)
+    right_mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), index=True)
+    decision: Mapped[str] = mapped_column(String(16))
+    source: Mapped[str] = mapped_column(String(32))
+    reviewer: Mapped[str] = mapped_column(String(100))
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extractor_version_id: Mapped[int] = mapped_column(ForeignKey("extractor_versions.id"))
+    supersedes_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resolution_decisions.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class LinkORM(CoreBase):
     __tablename__ = "links"
 

@@ -17,6 +17,13 @@ from src.pipeline.extract_core import run_core_extraction
 from src.pipeline.ingest_core import run_core_ingestion
 from src.pipeline.process_core import run_core_processing
 from src.pipeline.resolve_core import run_core_resolution
+from src.pipeline.review_core import (
+    format_review_queue,
+    run_export_review_labels,
+    run_manual_merge,
+    run_manual_split,
+    run_review_decision,
+)
 from src.pipeline.retract_mojibake import run_retract_mojibake
 from src.pipeline.translate_core import run_core_translation
 from src.pipeline.run_pipeline import run_full_pipeline
@@ -45,6 +52,47 @@ def build_parser() -> argparse.ArgumentParser:
 
     resolve_parser = sub.add_parser("resolve-core", help="Resolve mentions into entities (M4)")
     resolve_parser.add_argument("--max-block-size", type=int, default=100)
+    resolve_parser.add_argument(
+        "--review-margin",
+        type=float,
+        default=0.15,
+        help="Queue pairs within this distance of the scorer threshold",
+    )
+
+    review_parser = sub.add_parser("review", help="Human review and manual resolution controls (M4)")
+    review_sub = review_parser.add_subparsers(dest="review_command", required=True)
+
+    review_list = review_sub.add_parser("list", help="List scored pairs awaiting or carrying decisions")
+    review_list.add_argument(
+        "--status", choices=["pending", "accepted", "rejected", "all"], default="pending"
+    )
+    review_list.add_argument("--limit", type=int, default=20)
+
+    review_decide = review_sub.add_parser("decide", help="Accept or reject a queued pair")
+    review_decide.add_argument("review_pair_id", type=int)
+    review_decide.add_argument("decision", choices=["accept", "reject"])
+    review_decide.add_argument("--reviewer", required=True)
+    review_decide.add_argument("--reason")
+
+    review_merge = review_sub.add_parser("merge", help="Manually merge two live entities")
+    review_merge.add_argument("left_entity_id", type=int)
+    review_merge.add_argument("right_entity_id", type=int)
+    review_merge.add_argument("--reviewer", required=True)
+    review_merge.add_argument("--reason")
+
+    review_split = review_sub.add_parser(
+        "split", help="Keep two mentions in a live entity in separate clusters"
+    )
+    review_split.add_argument("entity_id", type=int)
+    review_split.add_argument("left_mention_id", type=int)
+    review_split.add_argument("right_mention_id", type=int)
+    review_split.add_argument("--reviewer", required=True)
+    review_split.add_argument("--reason")
+
+    review_export = review_sub.add_parser(
+        "export-labels", help="Export decided production pairs for scorer retraining"
+    )
+    review_export.add_argument("--out", type=Path, required=True)
 
     translate_parser = sub.add_parser("translate-core", help="Translate recent document titles AR->EN via DeepL (M5)")
     translate_parser.add_argument("--document-limit", type=int, default=200)
@@ -60,7 +108,17 @@ def build_parser() -> argparse.ArgumentParser:
     provenance_parser = sub.add_parser("provenance", help="Inspect provenance chains")
     provenance_sub = provenance_parser.add_subparsers(dest="provenance_command", required=True)
     show_parser = provenance_sub.add_parser("show", help="Show the provenance chain for a row")
-    show_parser.add_argument("table", choices=["mentions", "entities", "links", "facts"])
+    show_parser.add_argument(
+        "table",
+        choices=[
+            "mentions",
+            "entities",
+            "links",
+            "facts",
+            "review_pairs",
+            "resolution_decisions",
+        ],
+    )
     show_parser.add_argument("id", type=int)
 
     return parser
@@ -97,15 +155,48 @@ def main() -> None:
             f"mentions={stats.mentions_written} errors={stats.errors}"
         )
     elif args.command == "resolve-core":
-        stats = run_core_resolution(max_block_size=args.max_block_size)
+        stats = run_core_resolution(
+            max_block_size=args.max_block_size, review_margin=args.review_margin
+        )
         print(
             f"mentions={stats.mentions} distinct_forms={stats.exact_duplicate_groups} "
             f"candidate_pairs={stats.candidate_pairs} "
             f"(reduction {stats.reduction_ratio:.4f}) matched={stats.matched_pairs} "
             f"entities={stats.entities_created} retracted={stats.entities_retracted} "
-            f"split={stats.giant_components_split}"
+            f"split={stats.giant_components_split} queued={stats.review_pairs_queued} "
+            f"human_constraints={stats.human_constraints_applied}"
         )
         print(f"cluster sizes: {stats.size_histogram}")
+    elif args.command == "review" and args.review_command == "list":
+        print(format_review_queue(status=args.status, limit=args.limit))
+    elif args.command == "review" and args.review_command == "decide":
+        decision_id = run_review_decision(
+            args.review_pair_id,
+            accept=args.decision == "accept",
+            reviewer=args.reviewer,
+            reason=args.reason,
+        )
+        print(f"recorded resolution decision {decision_id}; run resolve-core to apply it")
+    elif args.command == "review" and args.review_command == "merge":
+        decision_id = run_manual_merge(
+            args.left_entity_id,
+            args.right_entity_id,
+            reviewer=args.reviewer,
+            reason=args.reason,
+        )
+        print(f"recorded manual merge decision {decision_id}; run resolve-core to apply it")
+    elif args.command == "review" and args.review_command == "split":
+        decision_id = run_manual_split(
+            args.entity_id,
+            args.left_mention_id,
+            args.right_mention_id,
+            reviewer=args.reviewer,
+            reason=args.reason,
+        )
+        print(f"recorded manual split decision {decision_id}; run resolve-core to apply it")
+    elif args.command == "review" and args.review_command == "export-labels":
+        count = run_export_review_labels(args.out)
+        print(f"wrote {count} reviewed pairs to {args.out}")
     elif args.command == "translate-core":
         stats = run_core_translation(document_limit=args.document_limit, max_new=args.max_new)
         print(

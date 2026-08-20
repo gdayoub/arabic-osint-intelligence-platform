@@ -33,6 +33,7 @@ from src.extract.gazetteer import GazetteerExtractor
 from src.resolve.blocking import KeyBlocker
 from src.resolve.cluster import cluster_pairs
 from src.resolve.features import MentionContext, compute_features
+from src.resolve.review import enqueue_review_pair, latest_decisions, ordered_pair
 from src.resolve.scorer import PairScorer
 from src.store.database import get_core_session
 from src.store.orm import DocumentORM, EntityORM, MentionORM
@@ -43,7 +44,10 @@ logger = logging.getLogger("pipeline.resolve_core")
 _ONTOLOGY_PATH = Path(__file__).resolve().parents[2] / "config" / "ontology.yaml"
 
 EXTRACTOR_NAME = "pair_scorer_resolver"
-EXTRACTOR_VERSION = "1.0.0"
+# 1.1.0 adds persisted human must-link/cannot-link constraints and the review
+# queue.  Retraining config/pair_scorer_weights.json must also bump this
+# version so a changed scorer produces a new immutable queue snapshot (P4).
+EXTRACTOR_VERSION = "1.1.0"
 
 
 @dataclass(slots=True)
@@ -56,6 +60,8 @@ class ResolveStats:
     entities_retracted: int = 0
     giant_components_split: int = 0
     exact_duplicate_groups: int = 0
+    review_pairs_queued: int = 0
+    human_constraints_applied: int = 0
     size_histogram: dict[int, int] = field(default_factory=dict)
 
     @property
@@ -144,6 +150,27 @@ def _as_mention(row: MentionORM) -> Mention:
     )
 
 
+def _partition_on_cannot_links(
+    members: list[int], cannot_links: set[tuple[int, int]]
+) -> list[list[int]]:
+    """Split one exact/gazetteer group enough to honor human cannot-links.
+
+    Exact spelling is normally collapsed before blocking, but two people can
+    share the same written name.  A manual split must therefore run before
+    that collapse.  Greedy placement is deliberately simple: each mention
+    joins the first subgroup containing nobody it is forbidden to match.
+    """
+    partitions: list[list[int]] = []
+    for mention_id in sorted(members):
+        for partition in partitions:
+            if all(ordered_pair(mention_id, other) not in cannot_links for other in partition):
+                partition.append(mention_id)
+                break
+        else:
+            partitions.append([mention_id])
+    return partitions
+
+
 def resolve_all(
     session: Session,
     ontology: Ontology,
@@ -151,7 +178,10 @@ def resolve_all(
     scorer: PairScorer | None = None,
     max_block_size: int = 100,
     gazetteer: GazetteerExtractor | None = None,
+    review_margin: float = 0.15,
 ) -> ResolveStats:
+    if review_margin < 0:
+        raise ValueError("review_margin must be non-negative")
     adapter = adapter or ArabicAdapter()
     scorer = scorer or PairScorer()
     gazetteer = gazetteer if gazetteer is not None else GazetteerExtractor()
@@ -169,6 +199,10 @@ def resolve_all(
         ).all()
     }
     raw_text = {mid: row.text for mid, row in mention_rows.items()}
+    decisions = latest_decisions(session)
+    mention_cannot_links = {
+        pair for pair, decision in decisions.items() if decision.decision == "different"
+    }
 
     # collapse exact duplicates BEFORE blocking. this turned out to matter a
     # lot and I missed it on the first pass.
@@ -209,15 +243,41 @@ def resolve_all(
         key = known if known else (context.object_type, context.normalized_name)
         groups[key].append(mention_id)
 
-    representatives = {members[0]: members for members in groups.values()}
+    partitioned_groups = [
+        (key, partition)
+        for key, members in groups.items()
+        for partition in _partition_on_cannot_links(members, mention_cannot_links)
+    ]
+    representatives = {members[0]: members for _key, members in partitioned_groups}
+    representative_for_mention = {
+        mention_id: representative
+        for representative, members in representatives.items()
+        for mention_id in members
+    }
     # remember which groups the dictionary named so the entity keeps that
     # name instead of one derived from surface frequency
     gazetteer_names = {
         members[0]: key[1]
-        for key, members in groups.items()
+        for key, members in partitioned_groups
         if gazetteer and gazetteer.canonical_for(contexts[members[0]].normalized_name) == key
     }
     stats.exact_duplicate_groups = len(representatives)
+
+    accepted_pairs: set[tuple[int, int]] = set()
+    rejected_pairs: set[tuple[int, int]] = set()
+    for (left_id, right_id), decision in decisions.items():
+        if left_id not in representative_for_mention or right_id not in representative_for_mention:
+            continue
+        left_rep = representative_for_mention[left_id]
+        right_rep = representative_for_mention[right_id]
+        if left_rep == right_rep:
+            continue
+        pair = ordered_pair(left_rep, right_rep)
+        if decision.decision == "same":
+            accepted_pairs.add(pair)
+        else:
+            rejected_pairs.add(pair)
+    stats.human_constraints_applied = len(accepted_pairs) + len(rejected_pairs)
 
     # block first. a pair that shares no key never gets scored.
     blocker = KeyBlocker(max_block_size=max_block_size)
@@ -227,18 +287,43 @@ def resolve_all(
     stats.candidate_pairs = len(candidates)
     stats.full_pairs = blocker.last_stats.full_pairs
 
+    resolver_version = register_extractor_version(
+        session,
+        EXTRACTOR_NAME,
+        EXTRACTOR_VERSION,
+        description="Multi-key blocking, logistic regression pair scorer, union find with complete linkage split",
+    )
+
     scores: dict[tuple[int, int], float] = {}
-    matched: list[tuple[int, int]] = []
+    matched: set[tuple[int, int]] = set(accepted_pairs)
     for a, b in candidates:
         ca, cb = contexts[a], contexts[b]
         # never merge across object types. a person and a place sharing a
         # name is a coincidence and not an identity.
         if ca.object_type != cb.object_type:
             continue
-        probability = scorer.probability(compute_features(ca, cb))
-        scores[(a, b)] = probability
-        if probability >= scorer.weights.threshold:
-            matched.append((a, b))
+        features = compute_features(ca, cb)
+        probability = scorer.probability(features)
+        pair = ordered_pair(a, b)
+        scores[pair] = probability
+        if abs(probability - scorer.weights.threshold) <= review_margin:
+            if enqueue_review_pair(
+                session,
+                ca,
+                cb,
+                probability,
+                scorer.weights.threshold,
+                features,
+                resolver_version,
+            ):
+                stats.review_pairs_queued += 1
+        if probability >= scorer.weights.threshold and pair not in rejected_pairs:
+            matched.add(pair)
+
+    for pair in accepted_pairs:
+        scores[pair] = 1.0
+    for pair in rejected_pairs:
+        scores[pair] = 0.0
 
     stats.matched_pairs = len(matched)
 
@@ -250,16 +335,10 @@ def resolve_all(
         matched,
         similarity=similarity,
         threshold=scorer.weights.threshold,
+        cannot_link_pairs=rejected_pairs,
     )
     stats.giant_components_split = result.giant_components_split
     stats.size_histogram = result.size_histogram
-
-    extractor = register_extractor_version(
-        session,
-        EXTRACTOR_NAME,
-        EXTRACTOR_VERSION,
-        description="Multi-key blocking, logistic regression pair scorer, union find with complete linkage split",
-    )
 
     # retract the previous generation before writing the new one. P6 says
     # retract and never delete so last week's answer stays on record.
@@ -284,17 +363,19 @@ def resolve_all(
                 "surface_forms": sorted({raw_text[m] for m in members}),
             },
             source_mention=_as_mention(mention_rows[members[0]]),
-            extractor_version=extractor,
+            extractor_version=resolver_version,
             ontology=ontology,
         )
         for other in members[1:]:
-            add_entity_evidence(session, entity, _as_mention(mention_rows[other]), extractor)
+            add_entity_evidence(session, entity, _as_mention(mention_rows[other]), resolver_version)
         stats.entities_created += 1
 
     return stats
 
 
-def run_core_resolution(max_block_size: int = 100) -> ResolveStats:
+def run_core_resolution(max_block_size: int = 100, review_margin: float = 0.15) -> ResolveStats:
     ontology = Ontology.from_yaml(_ONTOLOGY_PATH)
     with get_core_session() as session:
-        return resolve_all(session, ontology, max_block_size=max_block_size)
+        return resolve_all(
+            session, ontology, max_block_size=max_block_size, review_margin=review_margin
+        )

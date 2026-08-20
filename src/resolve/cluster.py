@@ -153,6 +153,7 @@ def cluster_pairs(
     similarity: Callable[[int, int], float] | None = None,
     threshold: float = 0.6,
     max_cluster_size: int = DEFAULT_MAX_CLUSTER_SIZE,
+    cannot_link_pairs: Iterable[tuple[int, int]] = (),
 ) -> ClusterResult:
     """union find, then split anything that came out suspiciously large.
 
@@ -162,7 +163,28 @@ def cluster_pairs(
     """
     items = list(items)
     uf = UnionFind(items)
+    cannot_links = {tuple(sorted(pair)) for pair in cannot_link_pairs}
+
+    # Highest-confidence edges go first.  This makes the result deterministic
+    # when a human cannot-link conflicts with an indirect chain of automatic
+    # matches, and preserves the strongest supported merges.
+    matching_pairs = list(matching_pairs)
+    if similarity is not None:
+        matching_pairs.sort(key=lambda pair: similarity(*pair), reverse=True)
+
     for a, b in matching_pairs:
+        root_a, root_b = uf.find(a), uf.find(b)
+        if root_a == root_b:
+            continue
+
+        violates_constraint = False
+        for left, right in cannot_links:
+            left_root, right_root = uf.find(left), uf.find(right)
+            if {left_root, right_root} == {root_a, root_b}:
+                violates_constraint = True
+                break
+        if violates_constraint:
+            continue
         uf.union(a, b)
 
     clusters: list[list[int]] = []

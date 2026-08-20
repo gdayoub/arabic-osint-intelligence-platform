@@ -17,6 +17,7 @@ any single decision it made.
 
 from __future__ import annotations
 
+import argparse
 import json
 import random
 from datetime import datetime, timedelta, timezone
@@ -59,7 +60,7 @@ def _context(name: str, others: list[str], source: str, day_offset: int) -> Ment
     )
 
 
-def build_dataset() -> tuple[list[list[float]], list[int]]:
+def build_dataset(review_labels_path: Path | None = None) -> tuple[list[list[float]], list[int]]:
     """turn the labelled name pairs into feature rows.
 
     READ THIS BEFORE CHANGING IT. my first version set source and date and
@@ -105,11 +106,25 @@ def build_dataset() -> tuple[list[list[float]], list[int]]:
         X.append(compute_features(a, b).as_vector())
         y.append(1 if entry["same"] else 0)
 
+    if review_labels_path is not None:
+        reviewed = json.loads(review_labels_path.read_text(encoding="utf-8"))
+        expected = PairFeatures.names()
+        if reviewed.get("feature_names") != expected:
+            raise ValueError(
+                f"review labels contain {reviewed.get('feature_names')}, expected {expected}"
+            )
+        for entry in reviewed.get("pairs", []):
+            vector = entry["feature_vector"]
+            if len(vector) != len(expected):
+                raise ValueError("review label feature vector has the wrong length")
+            X.append([float(value) for value in vector])
+            y.append(1 if entry["same"] else 0)
+
     return X, y
 
 
-def main() -> None:
-    X, y = build_dataset()
+def main(review_labels_path: Path | None = None) -> None:
+    X, y = build_dataset(review_labels_path)
     names = PairFeatures.names()
 
     model = LogisticRegression(max_iter=2000, C=1.0)
@@ -180,4 +195,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Fit the entity pair scorer")
+    parser.add_argument(
+        "--review-labels",
+        type=Path,
+        help="JSON produced by `python main.py review export-labels`",
+    )
+    args = parser.parse_args()
+    main(args.review_labels)
