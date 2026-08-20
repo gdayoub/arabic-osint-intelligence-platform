@@ -1,0 +1,223 @@
+{
+  "$defs": {
+    "CountryArticle": {
+      "additionalProperties": false,
+      "properties": {
+        "escalation": {
+          "minLength": 1,
+          "title": "Escalation",
+          "type": "string"
+        },
+        "processed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Processed At"
+        },
+        "published_date": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Published Date"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "title_en": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Title En"
+        },
+        "topic": {
+          "minLength": 1,
+          "title": "Topic",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s\\\\\"'<>`]+$",
+              "type": "string",
+              "x-allowed-schemes": [
+                "http",
+                "https"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Url"
+        }
+      },
+      "required": [
+        "title",
+        "title_en",
+        "source",
+        "url",
+        "topic",
+        "escalation",
+        "published_date",
+        "processed_at"
+      ],
+      "title": "CountryArticle",
+      "type": "object"
+    },
+    "DailyCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "date": {
+          "format": "date",
+          "title": "Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "date",
+        "count"
+      ],
+      "title": "DailyCount",
+      "type": "object"
+    },
+    "TopicCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "topic": {
+          "minLength": 1,
+          "title": "Topic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "count"
+      ],
+      "title": "TopicCount",
+      "type": "object"
+    }
+  },
+  "$id": "urn:george-dayoub:arabic-osint:dashboard:1.0.0:country",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "articles": {
+      "items": {
+        "$ref": "#/$defs/CountryArticle"
+      },
+      "title": "Articles",
+      "type": "array"
+    },
+    "country": {
+      "minLength": 1,
+      "title": "Country",
+      "type": "string"
+    },
+    "daily": {
+      "items": {
+        "$ref": "#/$defs/DailyCount"
+      },
+      "title": "Daily",
+      "type": "array"
+    },
+    "escalation": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "propertyNames": {
+        "minLength": 1
+      },
+      "title": "Escalation",
+      "type": "object"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "slug": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Slug",
+      "type": "string"
+    },
+    "sources": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "propertyNames": {
+        "minLength": 1
+      },
+      "title": "Sources",
+      "type": "object"
+    },
+    "topics": {
+      "items": {
+        "$ref": "#/$defs/TopicCount"
+      },
+      "title": "Topics",
+      "type": "array"
+    },
+    "total": {
+      "exclusiveMinimum": 0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_at",
+    "schema_version",
+    "country",
+    "slug",
+    "total",
+    "sources",
+    "topics",
+    "escalation",
+    "daily",
+    "articles"
+  ],
+  "title": "CountrySnapshot",
+  "type": "object"
+}

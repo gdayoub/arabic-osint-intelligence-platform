@@ -45,6 +45,7 @@ def test_bake_output_matches_dashboard_expected_shape(session, ontology, blob_st
     assert data["recent"][0]["title"] == "عنوان الخبر الأول"
     assert data["recent"][0]["country"] == "Syria"
     assert data["recent"][0]["url"] == "https://example.com/1"
+    assert data["recent"][0]["processed_at"].endswith("+00:00")
     assert data["review_queue"] == {"items": []}
 
 
@@ -441,6 +442,8 @@ def test_bake_country_pages_groups_documents_by_country(session, ontology, blob_
     assert pages["Syria"]["escalation"] == {"high": 3}
     assert pages["Syria"]["topics"] == [{"topic": "Military", "count": 3}]
     assert pages["Egypt"]["total"] == 1
+    assert pages["Syria"]["schema_version"] == 1
+    assert pages["Syria"]["articles"][0]["processed_at"].endswith("+00:00")
 
 
 def test_country_page_articles_never_include_body_text(session, ontology, blob_store):

@@ -1,0 +1,123 @@
+{
+  "countries": [
+    {
+      "count": 1,
+      "country": "Syria",
+      "slug": "syria"
+    }
+  ],
+  "daily": [
+    {
+      "count": 2,
+      "date": "2026-08-20"
+    }
+  ],
+  "entities": {
+    "top": {
+      "person": [
+        {
+          "count": 2,
+          "name": "محمد أحمد",
+          "surface_forms": [
+            "محمد أحمد",
+            "محمد احمد"
+          ]
+        }
+      ]
+    },
+    "total": 1
+  },
+  "escalation": {
+    "escalation": {
+      "high": 1
+    }
+  },
+  "generated_at": "2026-08-20T00:00:00+00:00",
+  "mentions": {
+    "top": {
+      "person": [
+        {
+          "count": 2,
+          "name": "محمد أحمد"
+        }
+      ]
+    },
+    "total": 2
+  },
+  "recent": [
+    {
+      "ai_summary": null,
+      "country": "Syria",
+      "escalation": "high",
+      "processed_at": "2026-08-20T00:00:00+00:00",
+      "published_date": "2026-08-19T23:00:00+00:00",
+      "source": "AlJazeeraArabic",
+      "title": "خبر <script>alert('x')</script> & دليل عربي",
+      "title_en": "Arabic evidence <not markup>",
+      "topic": "Politics",
+      "url": "https://example.com/source?id=1&lang=ar"
+    },
+    {
+      "ai_summary": null,
+      "country": null,
+      "escalation": null,
+      "processed_at": "2026-08-19T22:00:00+00:00",
+      "published_date": null,
+      "source": "BBCArabic",
+      "title": "وثيقة لم تكتمل معالجتها",
+      "title_en": null,
+      "topic": null,
+      "url": null
+    }
+  ],
+  "review_queue": {
+    "items": [
+      {
+        "distance": 0.02,
+        "features": {
+          "co_mention_overlap": 0.25,
+          "key_overlap": 0.5,
+          "name_similarity": 0.92,
+          "same_source": 0.0,
+          "same_type": 1.0,
+          "temporal_proximity": 0.75
+        },
+        "id": 7,
+        "left": {
+          "mention_id": 10,
+          "source": "AlJazeeraArabic",
+          "text": "محمد أحمد",
+          "title": "خبر <script>alert('x')</script> & دليل عربي",
+          "url": "https://example.com/source?id=1&lang=ar"
+        },
+        "object_type": "person",
+        "right": {
+          "mention_id": 11,
+          "source": "BBCArabic",
+          "text": "محمد احمد",
+          "title": "عنوان الدليل الثاني",
+          "url": "https://example.org/second"
+        },
+        "score": 0.58,
+        "threshold": 0.6
+      }
+    ]
+  },
+  "schema_version": 1,
+  "stats": {
+    "sources": {
+      "AlJazeeraArabic": 1,
+      "BBCArabic": 1
+    },
+    "total_processed": 1,
+    "total_raw": 2
+  },
+  "topics": {
+    "topics": [
+      {
+        "count": 1,
+        "topic": "Politics"
+      }
+    ]
+  }
+}

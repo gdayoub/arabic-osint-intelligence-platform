@@ -16,7 +16,10 @@ needs the source text goes through `provenance show`, not this file.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import tempfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -26,6 +29,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.contracts.dashboard import SCHEMA_VERSION, validate_snapshot_bundle
 from src.store.database import get_core_session
 from src.pipeline.extract_core import EXTRACTION_MARKER
 from src.pipeline.process_core import EXTRACTOR_NAME as PROCESSOR_NAME
@@ -232,7 +236,9 @@ def country_slug(country: str) -> str:
 
 
 def bake_country_pages(
-    session: Session, per_country_limit: int = COUNTRY_ARTICLE_LIMIT
+    session: Session,
+    per_country_limit: int = COUNTRY_ARTICLE_LIMIT,
+    generated_at: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """One JSON payload per country, for the country drill-down pages.
 
@@ -262,6 +268,7 @@ def bake_country_pages(
 
     translations = get_cached(session, [t for t in title_by_doc.values() if isinstance(t, str)])
 
+    snapshot_time = generated_at or datetime.now(timezone.utc).isoformat()
     pages: dict[str, dict[str, Any]] = {}
     for country, document_ids in docs_by_country.items():
         present = [doc_by_id[i] for i in document_ids if i in doc_by_id]
@@ -278,7 +285,8 @@ def bake_country_pages(
         source_counts = Counter(d.source for d in present)
 
         pages[country] = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": snapshot_time,
+            "schema_version": SCHEMA_VERSION,
             "country": country,
             "slug": country_slug(country),
             "total": len(present),
@@ -294,8 +302,8 @@ def bake_country_pages(
                     "url": d.url,
                     "topic": topic_by_doc.get(d.id),
                     "escalation": escalation_by_doc.get(d.id),
-                    "published_date": d.published_at.isoformat() if d.published_at else None,
-                    "processed_at": d.collected_at.isoformat() if d.collected_at else None,
+                    "published_date": _iso_timestamp(d.published_at),
+                    "processed_at": _iso_timestamp(d.collected_at),
                 }
                 for d in present[:per_country_limit]
             ],
@@ -314,6 +322,17 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def _iso_timestamp(value: datetime | None) -> str | None:
+    """Serialize a database datetime with an explicit UTC offset.
+
+    SQLite drops timezone metadata even for timezone-aware SQLAlchemy columns.
+    These columns are UTC, so local/test values get that lost marker restored
+    before they cross the strict public contract.
+    """
+    utc_value = _as_utc(value)
+    return utc_value.isoformat() if utc_value is not None else None
 
 
 def _daily_counts_for(documents: list[DocumentORM], days: int = DAILY_WINDOW_DAYS) -> list[dict[str, Any]]:
@@ -520,7 +539,11 @@ def pending_review_pairs(
     return items
 
 
-def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str, Any]:
+def bake(
+    session: Session,
+    recent_limit: int = RECENT_LIMIT_DEFAULT,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
     total_raw = (
         session.scalar(select(func.count()).select_from(DocumentORM).where(DocumentORM.retracted.is_(False))) or 0
     )
@@ -569,8 +592,8 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
             "escalation": escalation_by_doc.get(doc.id),
             "country": country_by_doc.get(doc.id),
             "ai_summary": None,  # not produced by process_core.py — see docs/adr/0011
-            "processed_at": doc.collected_at.isoformat() if doc.collected_at else None,
-            "published_date": doc.published_at.isoformat() if doc.published_at else None,
+            "processed_at": _iso_timestamp(doc.collected_at),
+            "published_date": _iso_timestamp(doc.published_at),
         }
         for doc in recent_rows
     ]
@@ -587,8 +610,8 @@ def bake(session: Session, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str
     ) if current_mention_ids else 0
 
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "schema_version": 1,
+        "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
+        "schema_version": SCHEMA_VERSION,
         "stats": {
             "total_raw": total_raw,
             "total_processed": total_processed,
@@ -618,13 +641,117 @@ def write_data_json(data: dict[str, Any], out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # ensure_ascii=False: same reasoning as the JSON column fix in
     # src/store/database.py -- escaping Arabic to \uXXXX roughly triples it.
-    out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    rendered = json.dumps(
+        data,
+        ensure_ascii=False,
+        indent=2,
+        allow_nan=False,
+    )
+    out_path.write_text(rendered, encoding="utf-8")
+
+
+def _remove_exact_path(path: Path) -> None:
+    """Remove one known publication target while rolling back a failed swap."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _publish_staged_snapshot(
+    data: dict[str, Any],
+    country_pages: dict[str, dict[str, Any]],
+    out_path: Path,
+) -> None:
+    """Stage every JSON file, then make the main snapshot the commit marker.
+
+    Validation happens before this function. A staging write cannot touch the
+    live files. Promotion swaps the complete country directory first and the
+    main file last; any failed swap restores the exact prior targets.
+    """
+    out_path = out_path.resolve()
+    parent = out_path.parent
+    if parent == Path(parent.anchor):
+        raise ValueError(
+            "refusing to publish a snapshot directly under a filesystem root"
+        )
+    if out_path.name in {"", ".", "..", "countries"}:
+        raise ValueError(
+            "snapshot output must be a JSON filename outside countries/"
+        )
+
+    parent.mkdir(parents=True, exist_ok=True)
+    countries_path = parent / "countries"
+
+    with tempfile.TemporaryDirectory(
+        dir=parent, prefix=".dashboard-snapshot-stage-"
+    ) as stage_name, tempfile.TemporaryDirectory(
+        dir=parent, prefix=".dashboard-snapshot-backup-"
+    ) as backup_name:
+        stage = Path(stage_name)
+        backup = Path(backup_name)
+        staged_data = stage / out_path.name
+        staged_countries = stage / "countries"
+        staged_countries.mkdir()
+
+        write_data_json(data, staged_data)
+        for page in country_pages.values():
+            write_data_json(page, staged_countries / f"{page['slug']}.json")
+
+        had_data = out_path.exists()
+        had_countries = countries_path.exists()
+        backup_data = backup / out_path.name
+        backup_countries = backup / "countries"
+        if had_data:
+            shutil.copy2(out_path, backup_data)
+
+        country_promoted = False
+        data_promoted = False
+        try:
+            if had_countries:
+                os.replace(countries_path, backup_countries)
+            os.replace(staged_countries, countries_path)
+            country_promoted = True
+
+            # Existing readers never see a new index before its country files.
+            os.replace(staged_data, out_path)
+            data_promoted = True
+        except Exception:
+            if data_promoted:
+                if had_data:
+                    os.replace(backup_data, out_path)
+                else:
+                    out_path.unlink(missing_ok=True)
+
+            if country_promoted:
+                _remove_exact_path(countries_path)
+            if had_countries and backup_countries.exists():
+                os.replace(backup_countries, countries_path)
+            raise
+
+
+def publish_snapshot_bundle(
+    data: dict[str, Any],
+    country_pages: dict[str, dict[str, Any]],
+    out_path: Path,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Validate and publish one dashboard/country snapshot candidate."""
+    validated_data, validated_pages = validate_snapshot_bundle(
+        data, country_pages
+    )
+    _publish_staged_snapshot(validated_data, validated_pages, out_path)
+    return validated_data, validated_pages
 
 
 def run_bake(out_path: Path, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str, Any]:
+    generated_at = datetime.now(timezone.utc).isoformat()
     with get_core_session() as session:
-        data = bake(session, recent_limit=recent_limit)
-        country_pages = bake_country_pages(session)
+        data = bake(
+            session,
+            recent_limit=recent_limit,
+            generated_at=generated_at,
+        )
+        country_pages = bake_country_pages(session, generated_at=generated_at)
 
     # The index the main dashboard links from: name, slug, count. The heavy
     # per-country payloads stay in their own files.
@@ -633,10 +760,6 @@ def run_bake(out_path: Path, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[s
         for page in sorted(country_pages.values(), key=lambda p: p["total"], reverse=True)
     ]
 
-    write_data_json(data, out_path)
-
-    countries_dir = out_path.parent / "countries"
-    for page in country_pages.values():
-        write_data_json(page, countries_dir / f"{page['slug']}.json")
+    data, country_pages = publish_snapshot_bundle(data, country_pages, out_path)
 
     return data

@@ -9,7 +9,7 @@ on:
 # cancel-in-progress: false -- queue the next run rather than kill one
 # mid-write, which is worse than waiting.
 concurrency:
-  group: osint-pipeline
+  group: osint-neon-writer
   cancel-in-progress: false
 
 jobs:
@@ -35,6 +35,10 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements.txt
+
+      # The executable models and committed schema/fixture/type bundle must
+      # still describe the same public payload before any database write.
+      - run: python scripts/generate_dashboard_contract.py --check
 
       # Gate: never write to Neon from a broken tree.
       - run: python -m pytest tests/unit -q

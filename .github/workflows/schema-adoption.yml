@@ -1,0 +1,64 @@
+name: Adopt Core Schema
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Read-only audit, or record the verified 0001 baseline'
+        required: true
+        type: choice
+        options:
+          - audit
+          - stamp
+        default: audit
+      confirmation:
+        description: 'For stamp mode, type: STAMP 0001_core_baseline'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: osint-neon-writer
+  cancel-in-progress: false
+
+jobs:
+  adopt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Verify migration code on a disposable database
+        run: python -m pytest tests/unit/test_migrations.py -q
+
+      - name: Audit existing production schema without changing it
+        run: python scripts/adopt_core_schema.py
+
+      - name: Require the exact baseline confirmation
+        if: inputs.mode == 'stamp'
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONFIRMATION" != 'STAMP 0001_core_baseline' ]; then
+            echo 'Refusing to stamp: confirmation text did not match.'
+            exit 1
+          fi
+
+      - name: Stamp the verified baseline without running DDL
+        if: inputs.mode == 'stamp'
+        run: python scripts/adopt_core_schema.py --stamp
+
+      - name: Verify the recorded revision
+        if: inputs.mode == 'stamp'
+        run: python scripts/adopt_core_schema.py

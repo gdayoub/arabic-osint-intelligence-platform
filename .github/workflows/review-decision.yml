@@ -5,7 +5,7 @@ on:
     types: [opened]
 
 concurrency:
-  group: entity-review-decision
+  group: osint-neon-writer
   cancel-in-progress: false
 
 jobs:
@@ -31,6 +31,10 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements.txt
+
+      # Fail before recording a decision if the public producer contract and
+      # its immutable schema/fixture/type bundle have drifted.
+      - run: python scripts/generate_dashboard_contract.py --check
 
       - name: Validate and record decision
         run: python scripts/apply_review_issue.py

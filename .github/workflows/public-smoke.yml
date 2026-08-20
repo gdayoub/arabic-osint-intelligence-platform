@@ -1,0 +1,35 @@
+name: Public Dashboard Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 1 * * *'
+  workflow_run:
+    workflows: ['OSINT Pipeline', 'Entity Review Decision']
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-dashboard-smoke
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python scripts/smoke_public_urls.py

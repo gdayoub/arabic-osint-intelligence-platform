@@ -6,6 +6,8 @@ PyYAML==6.0.2
 python-dotenv==1.0.1
 requests==2.32.3
 SQLAlchemy==2.0.32
+Alembic==1.19.1
+pydantic==2.12.5
 pytest==8.3.2
 # property based testing. it generates random inputs to find edge cases i
 # would never think to write by hand. worth it for normalization where the

@@ -1,0 +1,8 @@
+{
+  "bundle_sha256": "df38f614b6bcd210e2ec061031a61245dba361e367a965123c7b1221bb3d7128",
+  "contract": "dashboard",
+  "current_version": "1.0.0",
+  "manifest": "1.0.0/manifest.json",
+  "manifest_sha256": "37fb81ff81411819b05bef46571f0ce59af7febb0f9660f96f16950bb7a43ead",
+  "schema_version": 1
+}

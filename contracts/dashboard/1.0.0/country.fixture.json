@@ -1,0 +1,37 @@
+{
+  "articles": [
+    {
+      "escalation": "high",
+      "processed_at": "2026-08-20T00:00:00+00:00",
+      "published_date": "2026-08-19T23:00:00+00:00",
+      "source": "AlJazeeraArabic",
+      "title": "خبر <script>alert('x')</script> & دليل عربي",
+      "title_en": "Arabic evidence <not markup>",
+      "topic": "Politics",
+      "url": "https://example.com/source?id=1&lang=ar"
+    }
+  ],
+  "country": "Syria",
+  "daily": [
+    {
+      "count": 1,
+      "date": "2026-08-20"
+    }
+  ],
+  "escalation": {
+    "high": 1
+  },
+  "generated_at": "2026-08-20T00:00:00+00:00",
+  "schema_version": 1,
+  "slug": "syria",
+  "sources": {
+    "AlJazeeraArabic": 1
+  },
+  "topics": [
+    {
+      "count": 1,
+      "topic": "Politics"
+    }
+  ],
+  "total": 1
+}

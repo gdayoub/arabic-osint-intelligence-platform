@@ -1,0 +1,35 @@
+{
+  "artifacts": [
+    {
+      "bytes": 765,
+      "path": "country.fixture.json",
+      "sha256": "b97b1fb0672750711a3887e55928ceb1e82d319a73d64274c1e64d8a631e98d7"
+    },
+    {
+      "bytes": 4635,
+      "path": "country.schema.json",
+      "sha256": "89bcd90452bcf05b3b64082d6eacd6f7cd4b516d10037062d32f487bfda5ab30"
+    },
+    {
+      "bytes": 2686,
+      "path": "dashboard.fixture.json",
+      "sha256": "16e96ff36995eb9d0568301e673507d3992b251c3a12d7a18bd9e2d216207682"
+    },
+    {
+      "bytes": 12621,
+      "path": "dashboard.schema.json",
+      "sha256": "ddb8b1ee2e62dbc602db6770afea1f9b5ef7cd115751042d69c45b946e23f734"
+    },
+    {
+      "bytes": 2622,
+      "path": "dashboard.types.ts",
+      "sha256": "415a370f522cc6da1825087dd4cdcc65019b9d6f4649b69722374361286e862f"
+    }
+  ],
+  "bundle_sha256": "df38f614b6bcd210e2ec061031a61245dba361e367a965123c7b1221bb3d7128",
+  "contract": "dashboard",
+  "contract_version": "1.0.0",
+  "generator": "scripts/generate_dashboard_contract.py",
+  "pydantic_pin": "pydantic==2.12.5",
+  "schema_version": 1
+}
