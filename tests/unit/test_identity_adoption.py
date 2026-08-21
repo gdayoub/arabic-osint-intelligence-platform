@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from alembic import command
 from sqlalchemy import create_engine, func, select
@@ -219,3 +220,24 @@ def test_adoption_keeps_a_preexisting_new_document_uid_when_only_mapping_is_miss
         )
     ) == original_uid
     assert session.get(MentionEvidenceIdentityORM, raw_legacy_mention.id) is not None
+
+
+def test_manual_adoption_workflow_checks_before_any_confirmed_apply():
+    repository_root = Path(__file__).resolve().parents[2]
+    workflow = (
+        repository_root / ".github" / "workflows" / "evidence-identity-adoption.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "- check" in workflow
+    assert "- apply" in workflow
+    assert "group: osint-neon-writer" in workflow
+    assert "python scripts/verify_core_schema.py" in workflow
+    assert "python scripts/adopt_m42_identity.py --check" in workflow
+    assert "python scripts/adopt_m42_identity.py --apply" in workflow
+    assert workflow.index("adopt_m42_identity.py --check") < workflow.index(
+        "adopt_m42_identity.py --apply"
+    )
+    assert "ADOPT M4.2 EVIDENCE IDENTITY" in workflow
+    assert "BLOB_BACKEND: r2" in workflow
+    assert "cloudflare/wrangler-action" not in workflow

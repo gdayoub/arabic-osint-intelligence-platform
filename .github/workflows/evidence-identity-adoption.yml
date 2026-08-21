@@ -1,0 +1,114 @@
+name: Adopt Evidence Identity
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Read-only audit, or validate and write the durable M4.2a mappings'
+        required: true
+        type: choice
+        options:
+          - check
+          - apply
+        default: check
+      extractor_languages:
+        description: 'One explicit EXTRACTOR=LANGUAGE mapping per line; no language is guessed'
+        required: true
+        type: string
+        default: |-
+          gazetteer_extractor=ar
+          camelbert_ner_extractor=ar
+      default_language:
+        description: 'Optional explicit fallback only for a consciously approved legacy assumption'
+        required: false
+        type: string
+      confirmation:
+        description: 'For apply mode, type: ADOPT M4.2 EVIDENCE IDENTITY'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Adoption writes identities and constraints into the same core schema as the
+# scheduled pipeline, so it cannot overlap a source, review, or migration
+# writer. The check is deliberately serialized too: an apply cannot race a
+# clean report that was produced from a different database state.
+concurrency:
+  group: osint-neon-writer
+  cancel-in-progress: false
+
+jobs:
+  adopt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      BLOB_BACKEND: r2
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      EXTRACTOR_LANGUAGES: ${{ inputs.extractor_languages }}
+      DEFAULT_LANGUAGE: ${{ inputs.default_language }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Prove the identity adoption code on disposable databases
+        run: >-
+          python -m pytest
+          tests/unit/test_identity.py
+          tests/unit/test_identity_adoption.py
+          tests/unit/test_migrations.py
+          -q
+
+      - name: Refuse an unexpected production schema
+        run: python scripts/verify_core_schema.py
+
+      # Always audit immediately before an apply. The script validates every
+      # original span and reports missing mappings without writing any rows.
+      - name: Audit legacy evidence identity mappings
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r mapping || [ -n "$mapping" ]; do
+            if [ -n "$mapping" ]; then
+              args+=(--extractor-language "$mapping")
+            fi
+          done <<< "$EXTRACTOR_LANGUAGES"
+          if [ -n "$DEFAULT_LANGUAGE" ]; then
+            args+=(--default-language "$DEFAULT_LANGUAGE")
+          fi
+          python scripts/adopt_m42_identity.py --check "${args[@]}"
+
+      - name: Require the exact adoption confirmation
+        if: inputs.mode == 'apply'
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONFIRMATION" != 'ADOPT M4.2 EVIDENCE IDENTITY' ]; then
+            echo 'Refusing to adopt: confirmation text did not match.'
+            exit 1
+          fi
+
+      - name: Apply the just-validated durable mappings
+        if: inputs.mode == 'apply'
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r mapping || [ -n "$mapping" ]; do
+            if [ -n "$mapping" ]; then
+              args+=(--extractor-language "$mapping")
+            fi
+          done <<< "$EXTRACTOR_LANGUAGES"
+          if [ -n "$DEFAULT_LANGUAGE" ]; then
+            args+=(--default-language "$DEFAULT_LANGUAGE")
+          fi
+          python scripts/adopt_m42_identity.py --apply "${args[@]}"
