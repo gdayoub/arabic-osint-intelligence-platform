@@ -231,3 +231,31 @@ def test_source_exception_returns_only_a_closed_safe_reason(
     assert source["reason_code"] == PipelineReasonCode.UNEXPECTED_ERROR.value
     assert "error" not in source
     assert SECRET_TEXT not in repr(source)
+
+
+def test_ingestion_callbacks_receive_only_source_alias_and_safe_terminal_summary(
+    session, blob_store, monkeypatch
+):
+    scraper = _FixtureScraper(links=["/article/broken", "/article/healthy"])
+    monkeypatch.setattr(ingest_core, "build_scrapers", lambda: [scraper])
+    monkeypatch.setattr(
+        ingest_core,
+        "get_core_session",
+        lambda: nullcontext(session),
+    )
+    started: list[str] = []
+    finished: list[tuple[str, dict[str, object]]] = []
+
+    ingest_core.run_core_ingestion(
+        blob_store=blob_store,
+        on_source_started=started.append,
+        on_source_finished=lambda name, result: finished.append((name, result)),
+    )
+
+    assert started == [scraper.source_name]
+    assert len(finished) == 1
+    name, result = finished[0]
+    assert name == scraper.source_name
+    assert result["reason_code"] == PipelineReasonCode.SOURCE_PARSE_FAILED.value
+    assert result["article_yield_count"] == 1
+    assert SECRET_TEXT not in repr(finished)

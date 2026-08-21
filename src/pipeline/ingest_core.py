@@ -9,6 +9,7 @@ additive, not a migration of the old one. Rollback is "run the old command."
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -228,7 +229,13 @@ def ingest_article(
     return document, True
 
 
-def run_core_ingestion(limit_per_source: int | None = None, blob_store: BlobStore | None = None) -> IngestCoreStats:
+def run_core_ingestion(
+    limit_per_source: int | None = None,
+    blob_store: BlobStore | None = None,
+    *,
+    on_source_started: Callable[[str], None] | None = None,
+    on_source_finished: Callable[[str, dict[str, Any]], None] | None = None,
+) -> IngestCoreStats:
     """Scrape all configured sources and write documents to the core schema.
 
     Deliberately does not write data/raw/ingestion_snapshot_*.json the way
@@ -244,6 +251,13 @@ def run_core_ingestion(limit_per_source: int | None = None, blob_store: BlobStor
     stats = IngestCoreStats()
     with get_core_session() as session:
         for scraper in scrapers:
+            # The callbacks are deliberately optional and receive only the
+            # already-safe source alias/result.  Runtime orchestration uses
+            # them to place source ledger boundaries around the individual
+            # scraper rather than around this whole batch.  No exception or
+            # page data crosses this boundary.
+            if on_source_started is not None:
+                on_source_started(scraper.source_name)
             extractor_version = register_extractor_version(session, scraper.NAME, scraper.VERSION)
             source_inserted = 0
             source_skipped = 0
@@ -288,6 +302,11 @@ def run_core_ingestion(limit_per_source: int | None = None, blob_store: BlobStor
                     inserted_count=source_inserted,
                     skipped_existing_count=source_skipped,
                     reason=PipelineReasonCode.UNEXPECTED_ERROR,
+                )
+            if on_source_finished is not None:
+                on_source_finished(
+                    scraper.source_name,
+                    stats.sources[scraper.source_name],
                 )
 
     return stats
