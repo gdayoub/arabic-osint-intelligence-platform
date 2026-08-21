@@ -1,9 +1,8 @@
-"""Dormant, durable orchestration for the core OSINT pipeline.
+"""Durable orchestration for the core OSINT data pipeline.
 
-This module is intentionally a service boundary rather than the scheduled
-pipeline's new entrypoint.  The database migration must be applied before a
-workflow enables it.  Until then it can be exercised locally and from tests
-without changing the existing deployment path.
+This module records data-work boundaries for the scheduled pipeline. It does
+not claim that the external static-site deployment succeeded: candidate
+preparation and promotion remain explicit, separate operations.
 
 The useful split is small:
 
@@ -59,6 +58,7 @@ _STATIC_RELEASE_ASSETS = (
     ("index.html", "dashboard.html"),
     ("country.html", "country.html"),
 )
+_TRANSLATION_MODES = frozenset({"skip", "best-effort"})
 
 
 class RuntimeConfigurationError(ValueError):
@@ -382,6 +382,46 @@ def configured_ingest_source_names() -> tuple[str, ...]:
     return tuple(_validate_source_alias(scraper.source_name) for scraper in build_scrapers())
 
 
+def _validated_translation_mode(value: str) -> str:
+    if value not in _TRANSLATION_MODES:
+        choices = ", ".join(sorted(_TRANSLATION_MODES))
+        raise RuntimeConfigurationError(f"translation_mode must be one of: {choices}")
+    return value
+
+
+def core_component_versions(*, translation_mode: str = "skip") -> dict[str, str]:
+    """Return the exact code component versions used by one core run.
+
+    The map is captured in ``run_started`` before source writes begin. It
+    contains only stable component identities and versions, never settings,
+    credentials, source URLs, or an unreviewed database value.
+    """
+    translation_mode = _validated_translation_mode(translation_mode)
+
+    from src.extract.gazetteer import GazetteerExtractor
+    from src.pipeline import process_core, resolve_core
+    from src.pipeline.ingest_core import build_scrapers
+
+    versions: dict[str, str] = {}
+    for scraper in build_scrapers():
+        name = scraper.NAME
+        version = scraper.VERSION
+        if name in versions and versions[name] != version:
+            raise RuntimeConfigurationError("one component name cannot have two versions")
+        versions[name] = version
+
+    versions[process_core.EXTRACTOR_NAME] = process_core.EXTRACTOR_VERSION
+    versions[GazetteerExtractor.name] = GazetteerExtractor.version
+    versions[resolve_core.EXTRACTOR_NAME] = resolve_core.EXTRACTOR_VERSION
+
+    if translation_mode == "best-effort":
+        from src.processing.translation import EXTRACTOR_NAME, EXTRACTOR_VERSION
+
+        versions[EXTRACTOR_NAME] = EXTRACTOR_VERSION
+
+    return dict(sorted(versions.items()))
+
+
 def dashboard_shell_artifacts(
     static_dir: Path | None = None,
 ) -> tuple[ReleaseArtifact, ...]:
@@ -463,7 +503,7 @@ def bake_stage(
 
 def build_core_pipeline_stages(
     *,
-    include_translation: bool = False,
+    translation_mode: str = "skip",
     bake_out_path: Path | None = None,
 ) -> tuple[PipelineStage, ...]:
     """Build, but do not run, the current core pipeline in ledger order."""
@@ -471,7 +511,8 @@ def build_core_pipeline_stages(
     from src.pipeline.ingest_core import run_core_ingestion
     from src.pipeline.process_core import run_core_processing
     from src.pipeline.resolve_core import run_core_resolution
-    from src.pipeline.translate_core import run_core_translation
+
+    translation_mode = _validated_translation_mode(translation_mode)
 
     def run_ingest(runtime: StageRuntime) -> StageOutcome:
         stats = run_core_ingestion(
@@ -501,13 +542,24 @@ def build_core_pipeline_stages(
             operation=lambda _runtime: outcome_from_resolve_stats(run_core_resolution()),
         ),
     ]
-    if include_translation:
+    if translation_mode == "best-effort":
+        def run_translation(_runtime: StageRuntime) -> StageOutcome:
+            """Keep the current optional DeepL behavior visible in health."""
+            from src.pipeline.translate_core import run_core_translation
+
+            try:
+                return outcome_from_translate_stats(run_core_translation())
+            except Exception:
+                # The private job log retains the exception. The ledger gets
+                # only an error count, so it accurately degrades health
+                # without exposing a provider response or credential.
+                logger.exception("Optional title translation failed")
+                return StageOutcome(error_count=1)
+
         stages.append(
             PipelineStage(
                 name="translate",
-                operation=lambda _runtime: outcome_from_translate_stats(
-                    run_core_translation()
-                ),
+                operation=run_translation,
             )
         )
     if bake_out_path is not None:
@@ -1031,28 +1083,30 @@ def run_orchestrated_pipeline(
 
 def run_core_pipeline(
     *,
-    include_translation: bool = False,
+    translation_mode: str = "skip",
     bake_out_path: Path | None = None,
     prepare_release: bool = False,
     release_id: str | None = None,
+    extractor_versions: Mapping[str, str] | None = None,
     **kwargs: Any,
 ) -> OrchestratedRun:
-    """CLI-ready convenience wrapper; callers choose when to enable it.
-
-    It is deliberately not imported by ``main.py`` or any GitHub workflow in
-    this checkpoint.  A later explicit rollout can expose this wrapper as a
-    CLI command after production reaches the ledger migration head.
-    """
+    """Run the core data stages with ledger evidence, not a release claim."""
     if prepare_release and bake_out_path is None:
         raise RuntimeConfigurationError(
             "prepare_release requires bake_out_path so the candidate has a complete snapshot"
         )
+    translation_mode = _validated_translation_mode(translation_mode)
+    if extractor_versions is None:
+        extractor_versions = core_component_versions(
+            translation_mode=translation_mode
+        )
     return run_orchestrated_pipeline(
         build_core_pipeline_stages(
-            include_translation=include_translation,
+            translation_mode=translation_mode,
             bake_out_path=bake_out_path,
         ),
         prepare_release=prepare_release,
         release_id=release_id,
+        extractor_versions=extractor_versions,
         **kwargs,
     )

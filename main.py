@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import os
 import subprocess
 from pathlib import Path
@@ -27,9 +28,40 @@ from src.pipeline.review_core import (
 from src.pipeline.retract_mojibake import run_retract_mojibake
 from src.pipeline.translate_core import run_core_translation
 from src.pipeline.run_pipeline import run_full_pipeline
+from src.ops.ledger import abandon_expired_runs
+from src.ops.runtime import default_commit_sha, run_core_pipeline
 from src.store.blob import get_blob_store
 from src.store.database import get_core_session, init_core_db
 from src.store.provenance import format_provenance_chain, get_provenance_chain
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def reconcile_expired_pipeline_runs(
+    *,
+    now: datetime | None = None,
+    monitor_commit_sha: str | None = None,
+) -> int:
+    """Append durable abandonment facts for expired, unfinished data runs.
+
+    This command intentionally reconciles only run leases. It does not inspect
+    release candidates or assume a Cloudflare deployment outcome.
+    """
+    with get_core_session() as session:
+        abandoned = abandon_expired_runs(
+            session,
+            now=now or datetime.now(timezone.utc),
+            monitor_commit_sha=monitor_commit_sha or default_commit_sha(),
+        )
+    return len(abandoned)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +77,29 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "init-core-db",
         help="Initialize an empty core schema through Alembic, or verify its current head",
+    )
+    ledgered_pipeline = sub.add_parser(
+        "run-core-pipeline",
+        help="Run the core data pipeline with append-only run, stage, and source history",
+    )
+    ledgered_pipeline.add_argument("--out", type=Path, default=Path("dist/data.json"))
+    ledgered_pipeline.add_argument("--run-id", required=True)
+    ledgered_pipeline.add_argument("--commit-sha", default=None)
+    ledgered_pipeline.add_argument(
+        "--lease-minutes",
+        type=_positive_int,
+        default=35,
+        help="Run lease for later abandonment monitoring",
+    )
+    ledgered_pipeline.add_argument(
+        "--translation-mode",
+        choices=("skip", "best-effort"),
+        default="skip",
+        help="Skip title translation, or record a non-fatal translation failure as degraded",
+    )
+    sub.add_parser(
+        "reconcile-pipeline-runs",
+        help="Mark expired unfinished pipeline runs abandoned without touching release state",
     )
     sub.add_parser("process-core", help="Run topic/escalation/country classifiers over core-schema documents (M1.5)")
     ingest_core_parser = sub.add_parser("ingest-core", help="Scrape sources and write documents to the core schema (M1.5)")
@@ -149,6 +204,23 @@ def main() -> None:
     elif args.command == "init-core-db":
         init_core_db()
         print("Core schema is ready at the repository migration head.")
+    elif args.command == "run-core-pipeline":
+        result = run_core_pipeline(
+            translation_mode=args.translation_mode,
+            bake_out_path=args.out,
+            prepare_release=False,
+            run_id=args.run_id,
+            commit_sha=args.commit_sha,
+            lease_duration=timedelta(minutes=args.lease_minutes),
+        )
+        print(
+            f"ledgered pipeline run={result.run_id} health={result.health.status} "
+            f"stages={len(result.health.stages)} sources={len(result.health.sources)}; "
+            "no release was prepared or published"
+        )
+    elif args.command == "reconcile-pipeline-runs":
+        abandoned_count = reconcile_expired_pipeline_runs()
+        print(f"reconciled expired pipeline runs: abandoned={abandoned_count}")
     elif args.command == "process-core":
         stats = run_core_processing()
         print(f"scanned={stats.scanned} processed={stats.processed} errors={stats.errors}")

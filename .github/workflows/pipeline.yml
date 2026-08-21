@@ -48,30 +48,24 @@ jobs:
       # this checkout's sole Alembic head and reflection matches the ORM.
       - run: python scripts/verify_core_schema.py
 
-      - run: python main.py ingest-core
-
-      - run: python main.py process-core
-
-      # gazetteer only. the transformer scored 0.89 against this 0.90 and
-      # costs 2GB plus minutes of CI. see benchmarks/results.md.
-      - run: python main.py extract-core
-
-      # full recompute. resolution is global so a new mention can merge two
-      # clusters that were separate yesterday and there is no correct way to
-      # resolve one mention on its own.
-      - run: python main.py resolve-core
-
-      # Skipped cleanly when DEEPL_API_KEY isn't configured, and never fails
-      # the run: a spent quota or a DeepL outage should cost English titles,
-      # not the whole pipeline. The dashboard renders Arabic either way.
-      - name: Translate titles (optional)
-        # env, not secrets: the secrets context isn't reliably available in
-        # step-level `if`, but the job env above already carries the value.
-        if: env.DEEPL_API_KEY != ''
-        continue-on-error: true
-        run: python main.py translate-core
-
-      - run: python main.py bake-dashboard --out dist/data.json
+      # One command owns the complete run/stage/source lifecycle.  It writes
+      # only data-work evidence to the ledger; it does not create a release
+      # candidate or claim the later Cloudflare deployment succeeded.
+      #
+      # Missing DeepL skips translation. A configured provider runs in
+      # best-effort mode: a provider failure finishes the ledgered run as
+      # degraded after baking the still-usable Arabic snapshot.
+      - name: Run ledgered core pipeline
+        run: |
+          translation_mode=skip
+          if [ -n "${DEEPL_API_KEY:-}" ]; then
+            translation_mode=best-effort
+          fi
+          python main.py run-core-pipeline \
+            --run-id "github-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --commit-sha "${{ github.sha }}" \
+            --translation-mode "$translation_mode" \
+            --out dist/data.json
 
       - run: cp src/api/static/dashboard.html dist/index.html
       - run: cp src/api/static/country.html dist/country.html

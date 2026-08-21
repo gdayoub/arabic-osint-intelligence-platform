@@ -5,10 +5,12 @@ from __future__ import annotations
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
 
+import src.ops.runtime as runtime
 from src.ops.events import PipelineEventType, PipelineReasonCode
 from src.ops.runtime import (
     PipelineExecutionFailed,
@@ -17,6 +19,8 @@ from src.ops.runtime import (
     SourceOutcome,
     StageOutcome,
     bake_stage,
+    build_core_pipeline_stages,
+    core_component_versions,
     outcome_from_ingest_stats,
     run_core_pipeline,
     run_orchestrated_pipeline,
@@ -68,6 +72,16 @@ def _event_types(session, run_id: str) -> list[str]:  # noqa: ANN001
             .order_by(PipelineEventORM.id.asc())
         )
     )
+
+
+_RELEASE_EVENT_TYPES = {
+    PipelineEventType.RELEASE_RESERVED.value,
+    PipelineEventType.RELEASE_CANDIDATE_CREATED.value,
+    PipelineEventType.PROMOTION_STARTED.value,
+    PipelineEventType.RELEASE_PUBLISHED.value,
+    PipelineEventType.RELEASE_FAILED.value,
+    PipelineEventType.RELEASE_SUPERSEDED.value,
+}
 
 
 def test_runtime_records_complete_stage_and_source_history_then_prepares_candidate(
@@ -393,3 +407,208 @@ def test_inconsistent_zero_yield_reason_fails_closed_before_ledger_write():
 def test_core_wrapper_refuses_candidate_mode_without_a_baked_bundle():
     with pytest.raises(RuntimeConfigurationError, match="requires bake_out_path"):
         run_core_pipeline(prepare_release=True)
+
+
+def test_hard_source_failure_blocks_bake_and_never_emits_a_release_event(session):
+    """A failed source is terminal for the data pipeline, before baking."""
+    baked = False
+
+    def should_not_bake(_runtime) -> StageOutcome:  # noqa: ANN001
+        nonlocal baked
+        baked = True
+        return StageOutcome(output_count=1)
+
+    with pytest.raises(PipelineExecutionFailed) as raised:
+        run_orchestrated_pipeline(
+            (
+                PipelineStage(
+                    name="ingest",
+                    source_names=("BBC Arabic",),
+                    operation=lambda _runtime: StageOutcome(
+                        input_count=1,
+                        error_count=1,
+                        sources=(
+                            _source(
+                                status="failed",
+                                yielded=0,
+                                reason=PipelineReasonCode.SOURCE_FETCH_FAILED,
+                            ),
+                        ),
+                    ),
+                ),
+                PipelineStage(name="bake", operation=should_not_bake),
+            ),
+            session_scope=_scope(session),
+            run_id="ledger-hard-source-failure",
+            commit_sha=COMMIT_SHA,
+            clock=_clock,
+            prepare_release=False,
+        )
+
+    assert raised.value.health.status == "failed"
+    assert baked is False
+    event_types = _event_types(session, "ledger-hard-source-failure")
+    assert PipelineEventType.RUN_FAILED.value in event_types
+    assert PipelineEventType.STAGE_STARTED.value in event_types
+    assert _RELEASE_EVENT_TYPES.isdisjoint(event_types)
+
+
+def test_best_effort_translation_failure_bakes_and_finishes_degraded_without_release_events(
+    session, monkeypatch, tmp_path
+):
+    """An optional provider outage must not hide a usable Arabic snapshot."""
+    from scripts import bake_dashboard_data
+    from src.pipeline import extract_core, ingest_core, process_core, resolve_core, translate_core
+
+    execution: list[str] = []
+    out_path = tmp_path / "dist" / "data.json"
+
+    def fake_ingest(**_kwargs):  # noqa: ANN001
+        execution.append("ingest")
+        return SimpleNamespace(attempted=0, inserted=0, sources={})
+
+    def fake_process():
+        execution.append("process")
+        return SimpleNamespace(scanned=0, processed=0, errors=0)
+
+    def fake_extract():
+        execution.append("extract")
+        return SimpleNamespace(documents_scanned=0, documents_processed=0, errors=0)
+
+    def fake_resolve():
+        execution.append("resolve")
+        return SimpleNamespace(mentions=0, entities_created=0)
+
+    def broken_translate():
+        execution.append("translate")
+        raise RuntimeError(SECRET_TEXT)
+
+    def fake_bake(path: Path, recent_limit: int = 30):  # noqa: ANN001
+        del recent_limit
+        execution.append("bake")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'{"stats":{"total_processed":0}}\n')
+        return {"stats": {"total_processed": 0}}
+
+    monkeypatch.setattr(runtime, "configured_ingest_source_names", lambda: ())
+    monkeypatch.setattr(ingest_core, "run_core_ingestion", fake_ingest)
+    monkeypatch.setattr(process_core, "run_core_processing", fake_process)
+    monkeypatch.setattr(extract_core, "run_core_extraction", fake_extract)
+    monkeypatch.setattr(resolve_core, "run_core_resolution", fake_resolve)
+    monkeypatch.setattr(translate_core, "run_core_translation", broken_translate)
+    monkeypatch.setattr(bake_dashboard_data, "run_bake", fake_bake)
+
+    result = run_orchestrated_pipeline(
+        build_core_pipeline_stages(
+            translation_mode="best-effort",
+            bake_out_path=out_path,
+        ),
+        session_scope=_scope(session),
+        run_id="ledger-translation-degraded",
+        commit_sha=COMMIT_SHA,
+        clock=_clock,
+        prepare_release=False,
+    )
+
+    assert execution == ["ingest", "process", "extract", "resolve", "translate", "bake"]
+    assert result.release_candidate is None
+    assert result.health.status == "degraded"
+    translate_stage = next(stage for stage in result.health.stages if stage.name == "translate")
+    assert translate_stage.status == "degraded"
+    assert translate_stage.error_count == 1
+    assert next(stage for stage in result.health.stages if stage.name == "bake").status == "succeeded"
+    event_types = _event_types(session, result.run_id)
+    assert PipelineEventType.RUN_SUCCEEDED.value in event_types
+    assert _RELEASE_EVENT_TYPES.isdisjoint(event_types)
+    assert SECRET_TEXT not in str(result.health.to_dict())
+    assert all(
+        SECRET_TEXT not in str(row.__dict__)
+        for row in session.scalars(
+            select(PipelineEventORM).where(PipelineEventORM.run_id == result.run_id)
+        )
+    )
+
+
+def test_core_component_versions_are_static_and_translation_mode_specific():
+    skipped = core_component_versions(translation_mode="skip")
+    translated = core_component_versions(translation_mode="best-effort")
+
+    assert {
+        "aljazeera_scraper",
+        "alarabiya_scraper",
+        "bbc_arabic_scraper",
+        "cnn_arabic_scraper",
+        "rule_based_document_classifier",
+        "gazetteer_extractor",
+        "pair_scorer_resolver",
+    }.issubset(skipped)
+    assert "deepl_translator" not in skipped
+    assert translated["deepl_translator"]
+    assert {name: translated[name] for name in skipped} == skipped
+
+
+def test_ledger_only_run_records_run_id_commit_and_component_versions_without_release_events(
+    session,
+):
+    versions = core_component_versions(translation_mode="skip")
+    run_id = "ledger-traceability"
+
+    result = run_orchestrated_pipeline(
+        (
+            PipelineStage(
+                name="process",
+                operation=lambda _runtime: StageOutcome(input_count=3, output_count=3),
+            ),
+        ),
+        session_scope=_scope(session),
+        run_id=run_id,
+        commit_sha=COMMIT_SHA,
+        extractor_versions=versions,
+        clock=_clock,
+        prepare_release=False,
+    )
+
+    started = session.scalar(
+        select(PipelineEventORM).where(
+            PipelineEventORM.run_id == run_id,
+            PipelineEventORM.event_type == PipelineEventType.RUN_STARTED.value,
+        )
+    )
+    assert started is not None
+    assert started.run_id == run_id
+    assert started.commit_sha == COMMIT_SHA
+    assert started.extractor_versions == versions
+    assert result.health.extractor_versions == versions
+    assert result.release_candidate is None
+    assert _RELEASE_EVENT_TYPES.isdisjoint(_event_types(session, run_id))
+
+
+def test_core_wrapper_wires_static_versions_and_never_enables_release_by_default(
+    monkeypatch, tmp_path
+):
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    monkeypatch.setattr(runtime, "build_core_pipeline_stages", lambda **kwargs: (sentinel,))
+
+    def capture_run(stages, **kwargs):  # noqa: ANN001
+        captured["stages"] = stages
+        captured.update(kwargs)
+        return "completed"
+
+    monkeypatch.setattr(runtime, "run_orchestrated_pipeline", capture_run)
+
+    result = run_core_pipeline(
+        translation_mode="best-effort",
+        bake_out_path=tmp_path / "data.json",
+        run_id="wrapper-ledger-only",
+        commit_sha=COMMIT_SHA,
+    )
+
+    assert result == "completed"
+    assert captured["stages"] == (sentinel,)
+    assert captured["prepare_release"] is False
+    assert captured["release_id"] is None
+    assert captured["extractor_versions"] == core_component_versions(
+        translation_mode="best-effort"
+    )

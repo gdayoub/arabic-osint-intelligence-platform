@@ -1,0 +1,39 @@
+name: OSINT Pipeline Ledger Monitor
+
+on:
+  schedule:
+    # Offset from the scheduled writer. The monitor only records an expired
+    # lease; it does not retry a pipeline, prepare a candidate, or deploy.
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+# The monitor appends terminal facts to the same database event stream as all
+# writers, so it must queue behind rather than race a live pipeline run.
+concurrency:
+  group: osint-neon-writer
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Refuse to append evidence from a checkout whose ledger schema has not
+      # reached its verified migration head.
+      - run: python scripts/verify_core_schema.py
+
+      - name: Record expired unfinished runs
+        run: python main.py reconcile-pipeline-runs
