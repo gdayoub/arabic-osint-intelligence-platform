@@ -37,6 +37,7 @@ def _document_with_mentions(session, blob_store, ontology, extractor, *, name, s
                 session, document=document, text=spelling, start=start,
                 end=start + len(spelling), object_type="person",
                 extractor_version=extractor, ontology=ontology,
+                language="ar",
             )
         )
     return made
@@ -128,8 +129,8 @@ def test_person_and_location_never_merge(session, ontology, blob_store):
     document = create_document(
         session, source="s", text=text, content_hash="xt", blob_store=blob_store
     )
-    create_mention(session, document, "سوريا", 4, 9, "person", extractor, ontology)
-    create_mention(session, document, "سوريا", 13, 18, "location", extractor, ontology)
+    create_mention(session, document, "سوريا", 4, 9, "person", extractor, ontology, language="ar")
+    create_mention(session, document, "سوريا", 13, 18, "location", extractor, ontology, language="ar")
     session.flush()
 
     stats = resolve_all(session, ontology)
@@ -173,8 +174,8 @@ def test_context_excludes_the_mention_itself(session, ontology, blob_store):
     document = create_document(
         session, source="s", text=text, content_hash="ctx", blob_store=blob_store
     )
-    create_mention(session, document, "بشار الأسد", 6, 16, "person", extractor, ontology)
-    create_mention(session, document, "علي خامنئي", 20, 30, "person", extractor, ontology)
+    create_mention(session, document, "بشار الأسد", 6, 16, "person", extractor, ontology, language="ar")
+    create_mention(session, document, "علي خامنئي", 20, 30, "person", extractor, ontology, language="ar")
     session.flush()
 
     contexts = load_mention_contexts(session, ar)
@@ -198,7 +199,7 @@ def test_a_name_more_frequent_than_the_block_cap_still_resolves(session, ontolog
             session, source="s", text=text, content_hash=f"iran-{i}",
             blob_store=blob_store, url=f"https://example.com/iran-{i}",
         )
-        create_mention(session, document, "إيران", 9, 14, "location", extractor, ontology)
+        create_mention(session, document, "إيران", 9, 14, "location", extractor, ontology, language="ar")
     session.flush()
 
     # a cap far below the number of mentions. before the fix this dropped the

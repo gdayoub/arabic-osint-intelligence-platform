@@ -7,18 +7,18 @@ on:
         description: 'Exact production revision before apply'
         required: true
         type: string
-        default: '0001_core_baseline'
+        default: '0003_publication_state'
       expected_target:
         description: 'Exact repository head to apply'
         required: true
         type: string
-        default: '0003_publication_state'
+        default: '0004_evidence_identity'
       recovery_reference:
         description: 'Prepared Neon branch, PITR point, or recovery ticket'
         required: true
         type: string
       confirmation:
-        description: 'Type: UPGRADE 0001_core_baseline TO 0003_publication_state'
+        description: 'Type: UPGRADE 0003_publication_state TO 0004_evidence_identity'
         required: true
         type: string
 

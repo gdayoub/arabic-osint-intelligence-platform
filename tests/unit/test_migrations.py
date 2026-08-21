@@ -72,6 +72,37 @@ def test_empty_database_upgrades_to_head_with_exact_baseline(tmp_path):  # noqa:
         engine.dispose()
 
 
+def test_0003_upgrades_to_0004_evidence_identity_without_rebuilding_core_tables(
+    tmp_path,  # noqa: ANN001
+):
+    database_url = _sqlite_url(tmp_path, "0003-to-0004.sqlite")
+    config = make_alembic_config(database_url=database_url)
+    command.upgrade(config, "0003_publication_state")
+    engine = create_engine(database_url)
+
+    try:
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0003_publication_state",)
+            before = set(inspect(connection).get_table_names())
+            assert "document_identities" not in before
+            assert "evidence_identities" not in before
+
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0004_evidence_identity",)
+            after = set(inspect(connection).get_table_names())
+            assert {
+                "document_identities",
+                "evidence_identities",
+                "mention_evidence_identities",
+                "resolution_constraints",
+            } <= after
+            assert audit_head_schema(connection) == []
+    finally:
+        engine.dispose()
+
+
 def test_empty_database_upgrades_to_exact_adoption_baseline(tmp_path):  # noqa: ANN001
     database_url = _sqlite_url(tmp_path, "empty-to-baseline.sqlite")
     config = make_alembic_config(database_url=database_url)

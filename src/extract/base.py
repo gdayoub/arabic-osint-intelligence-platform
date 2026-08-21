@@ -35,6 +35,10 @@ class ExtractedMention:
 class MentionExtractor(Protocol):
     name: str
     version: str
+    # The language participates in durable evidence identity.  It is a
+    # declared extractor property rather than a core-schema guess so future
+    # language adapters can add outputs without changing identity code.
+    language: str
 
     def extract(self, text: str) -> list[ExtractedMention]:
         ...

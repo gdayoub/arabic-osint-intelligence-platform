@@ -181,6 +181,8 @@ def build_parser() -> argparse.ArgumentParser:
             "facts",
             "review_pairs",
             "resolution_decisions",
+            "evidence_identities",
+            "resolution_constraints",
         ],
     )
     show_parser.add_argument("id", type=int)

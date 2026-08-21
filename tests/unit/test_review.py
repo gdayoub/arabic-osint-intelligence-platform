@@ -64,6 +64,7 @@ def _make_mentions(session, blob_store, ontology, spellings):
                 "person",
                 extractor,
                 ontology,
+                language="ar",
             )
         )
     session.flush()

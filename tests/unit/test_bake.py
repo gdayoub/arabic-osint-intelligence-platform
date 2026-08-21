@@ -67,8 +67,8 @@ def test_bake_includes_pending_review_evidence_and_hides_decided_pairs(
         url="https://example.com/right", body="ظهر محمد احمد في الخبر.",
         title="عنوان الدليل الثاني", topic="Politics", escalation="low",
     )
-    left = create_mention(session, left_doc, "محمد أحمد", 4, 13, "person", extractor, ontology)
-    right = create_mention(session, right_doc, "محمد احمد", 4, 13, "person", extractor, ontology)
+    left = create_mention(session, left_doc, "محمد أحمد", 4, 13, "person", extractor, ontology, language="ar")
+    right = create_mention(session, right_doc, "محمد احمد", 4, 13, "person", extractor, ontology, language="ar")
     record_document_fact(
         session, left_doc, EXTRACTION_MARKER, 1, extractor, ontology
     )
@@ -320,6 +320,7 @@ def test_bake_uses_only_current_live_mention_and_entity_evidence(
         "person",
         old_extractor,
         ontology,
+        language="ar",
     )
     old_marker = record_document_fact(
         session, live, EXTRACTION_MARKER, 1, old_extractor, ontology
@@ -343,6 +344,7 @@ def test_bake_uses_only_current_live_mention_and_entity_evidence(
         "person",
         current_extractor,
         ontology,
+        language="ar",
     )
     record_document_fact(
         session,
@@ -383,6 +385,7 @@ def test_bake_uses_only_current_live_mention_and_entity_evidence(
         "person",
         current_extractor,
         ontology,
+        language="ar",
     )
     record_document_fact(
         session, withdrawn, EXTRACTION_MARKER, 1, current_extractor, ontology
@@ -486,8 +489,13 @@ def test_top_mentions_groups_spelling_variants(session, ontology, blob_store):
 
     class Fake:
         name, version = "fake", "1.0.0"
-        def __init__(self, spans): self._s = spans
-        def extract(self, text): return list(self._s)
+        language = "ar"
+
+        def __init__(self, spans):
+            self._s = spans
+
+        def extract(self, text):
+            return list(self._s)
 
     for i, spelling in enumerate(["بشار الأسد", "بشار الاسد", "بشار الأسد"]):
         text = f"قال {spelling} شيئا"
@@ -536,7 +544,7 @@ def test_top_entities_shows_the_merged_surface_forms(session, ontology, blob_sto
             session, source="t", text=text, content_hash=f"te-{i}", blob_store=blob_store,
             url=f"https://example.com/te-{i}",
         )
-        create_mention(session, doc, "دونالد ترامب", 4, 16, "person", extractor, ontology)
+        create_mention(session, doc, "دونالد ترامب", 4, 16, "person", extractor, ontology, language="ar")
         record_document_fact(
             session, doc, EXTRACTION_MARKER, 1, extractor, ontology
         )

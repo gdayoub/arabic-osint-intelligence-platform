@@ -23,6 +23,11 @@ from src.core.models import Document, Entity, ExtractorVersion, Fact, Link, Ment
 from src.core.ontology import Ontology
 from src.store.blob import BlobStore, compress_text, sha256_text, text_blob_key
 from src.store.documents import resolve_document_text
+from src.store.identity import (
+    canonical_language,
+    ensure_document_identity,
+    ensure_mention_evidence_identity,
+)
 from src.store.orm import (
     DocumentORM,
     EntityMentionORM,
@@ -95,6 +100,10 @@ def create_document(
         row.collected_at = collected_at  # else leave unset so the column default (now()) applies
     session.add(row)
     session.flush()
+    # The UUID mapping is additive and lives in this same transaction as the
+    # document row.  A document cannot become eligible for new evidence
+    # writes without its durable identity.
+    ensure_document_identity(session, row)
     return Document(
         id=row.id,
         source=row.source,
@@ -117,6 +126,8 @@ def create_mention(
     object_type: str,
     extractor_version: ExtractorVersion,
     ontology: Ontology,
+    *,
+    language: str,
 ) -> Mention:
     """Create a mention and its provenance row together.
 
@@ -130,6 +141,24 @@ def create_mention(
         )
     if not ontology.is_valid_object_type(object_type):
         raise ValueError(f"object_type {object_type!r} is not declared in ontology.yaml")
+    if canonical_language(language) == "und":
+        raise ValueError(
+            "new mention writes require a declared language; 'und' is reserved for explicit legacy adoption"
+        )
+    if document.id is None:
+        raise ValueError("document must be persisted before creating a mention")
+
+    document_row = session.get(DocumentORM, document.id)
+    if document_row is None:
+        raise ValueError(f"document {document.id} does not exist")
+    source_text_sha256 = sha256_text(document.text)
+    if (
+        document_row.text_sha256 is not None
+        and document_row.text_sha256 != source_text_sha256
+    ):
+        raise ValueError(
+            f"document {document.id} text does not match its persisted source hash"
+        )
 
     mention_row = MentionORM(
         document_id=document.id,
@@ -150,6 +179,13 @@ def create_mention(
             mention_id=mention_row.id,
             extractor_version_id=extractor_version.id,
         )
+    )
+    ensure_mention_evidence_identity(
+        session,
+        document=document_row,
+        mention=mention_row,
+        language=language,
+        source_text_sha256=source_text_sha256,
     )
     return _to_mention(mention_row)
 
@@ -309,6 +345,7 @@ class ProvenanceEntry:
     target_table: str
     target_id: int
     document_id: int
+    mention_id: int | None
     document_source: str
     document_text: str
     mention_text: str | None
@@ -356,6 +393,7 @@ def get_provenance_chain(
                 target_table=row.target_table,
                 target_id=row.target_id,
                 document_id=document.id,
+                mention_id=mention.id if mention else None,
                 document_source=document.source,
                 document_text=document_text,
                 mention_text=mention.text if mention else None,
@@ -380,6 +418,7 @@ def format_provenance_chain(entries: list[ProvenanceEntry]) -> str:
         lines.append(f"  extracted by: {entry.extractor_name} v{entry.extractor_version} at {entry.created_at}")
         lines.append(f"  document: [{entry.document_id}] source={entry.document_source}")
         if entry.mention_text is not None:
+            lines.append(f"  mention: [{entry.mention_id}]")
             context_start = max(entry.mention_start - 20, 0)
             context_end = min(entry.mention_end + 20, len(entry.document_text))
             before = entry.document_text[context_start : entry.mention_start]

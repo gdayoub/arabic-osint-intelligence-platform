@@ -48,6 +48,7 @@ def test_rollout_plans_exact_linear_baseline_to_head(tmp_path):  # noqa: ANN001
         assert plan.revisions_to_apply == (
             "0002_pipeline_event_ledger",
             "0003_publication_state",
+            "0004_evidence_identity",
         )
     finally:
         engine.dispose()

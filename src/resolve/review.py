@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from src.core.models import ExtractorVersion
 from src.resolve.features import MentionContext, PairFeatures
+from src.store.identity import record_resolution_constraint
 from src.store.orm import (
     EntityMentionORM,
     EntityORM,
@@ -178,6 +179,11 @@ def record_decision(
                 extractor_version_id=extractor.id,
             )
         )
+    # Keep the existing raw decision semantics intact while writing its
+    # durable-evidence counterpart in this same transaction.  A legacy row
+    # without mappings is intentionally refused rather than guessed; the
+    # explicit M4.2a adoption command must establish those mappings first.
+    record_resolution_constraint(session, row)
     return row
 
 

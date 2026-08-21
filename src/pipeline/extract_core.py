@@ -184,6 +184,7 @@ def extract_one_document(
                 object_type=mention.object_type,
                 extractor_version=extractor_version,
                 ontology=ontology,
+                language=extractor.language,
             )
             written += 1
 

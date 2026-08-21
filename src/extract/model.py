@@ -57,6 +57,7 @@ _LABEL_TO_OBJECT_TYPE = {
 
 class ModelExtractor:
     name = "camelbert_ner_extractor"
+    language = "ar"
     version = "1.0.0"
 
     def __init__(

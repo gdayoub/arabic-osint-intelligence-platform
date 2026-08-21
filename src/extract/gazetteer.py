@@ -25,6 +25,7 @@ _GAZETTEER_PATH = Path(__file__).resolve().parents[2] / "config" / "gazetteer.ya
 
 class GazetteerExtractor:
     name = "gazetteer_extractor"
+    language = "ar"
     # 1.0.0 to start. bumping this is what makes already extracted mentions
     # findable and reprocessable exactly like the classifier version bump did
     version = "1.0.0"

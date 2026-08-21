@@ -18,7 +18,7 @@ from src.pipeline.extract_core import (
     _documents_needing_extraction,
     extract_one_document,
 )
-from src.store.orm import FactORM, MentionORM, ProvenanceORM
+from src.store.orm import FactORM, MentionEvidenceIdentityORM, MentionORM, ProvenanceORM
 from src.store.provenance import create_document, register_extractor_version
 
 
@@ -28,6 +28,7 @@ class FakeExtractor:
 
     name = "fake_extractor"
     version = "1.0.0"
+    language = "ar"
 
     def __init__(self, mentions: list[ExtractedMention] | None = None) -> None:
         self._mentions = mentions or []
@@ -224,7 +225,17 @@ def test_failed_version_replacement_keeps_only_prior_generation_live(
     assert len(markers) == 1
     assert markers[0].extractor_version_id == old_version.id
     assert markers[0].retracted is False
-    assert len(provenance) == 2  # old mention + old marker; no replacement residue
+    # The retained old generation now has mention, durable-evidence, and
+    # extraction-marker provenance.  The failed replacement's mention and
+    # its evidence mapping must still be absent after the savepoint rollback.
+    assert len(provenance) == 3
+    assert {row.target_table for row in provenance} == {
+        "mentions",
+        "evidence_identities",
+        "facts",
+    }
+    mappings = session.scalars(select(MentionEvidenceIdentityORM)).all()
+    assert [row.mention_id for row in mappings] == [mentions[0].id]
     assert document.id in _documents_needing_extraction(
         session, "fake_extractor", "1.0.0", 100
     )
@@ -351,6 +362,7 @@ def test_extraction_stats_only_count_documents_whose_savepoint_succeeds(
     class SelectiveExtractor:
         name = "selective_extractor"
         version = "1.0.0"
+        language = "ar"
 
         def extract(self, text: str) -> list[ExtractedMention]:
             start = text.index("دمشق")

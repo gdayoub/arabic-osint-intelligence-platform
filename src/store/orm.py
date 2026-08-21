@@ -228,6 +228,117 @@ class TranslationORM(CoreBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class DocumentIdentityORM(CoreBase):
+    """A durable handle for one ingested document row.
+
+    ``documents.id`` is still the storage key used by the existing pipeline.
+    This additive mapping gives later identity work a never-reused public-safe
+    handle without changing that row or any current read contract.
+    """
+
+    __tablename__ = "document_identities"
+    __table_args__ = (
+        UniqueConstraint("document_id", name="uq_document_identities_document"),
+        UniqueConstraint("document_uid", name="uq_document_identities_uid"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"))
+    document_uid: Mapped[str] = mapped_column(String(36))
+    identity_version: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class EvidenceIdentityORM(CoreBase):
+    """The durable identity of one exact source-text span.
+
+    The fingerprint intentionally excludes extractor version.  A new
+    extractor may create a new raw mention row for the same source span, but
+    that row should still be able to carry a human decision forward.
+    """
+
+    __tablename__ = "evidence_identities"
+    __table_args__ = (
+        CheckConstraint("end_offset > start_offset", name="ck_evidence_identity_offsets"),
+        UniqueConstraint("fingerprint", name="uq_evidence_identities_fingerprint"),
+        UniqueConstraint(
+            "document_identity_id",
+            "source_text_sha256",
+            "start_offset",
+            "end_offset",
+            "object_type",
+            "language",
+            name="uq_evidence_identities_signature",
+        ),
+        Index(
+            "ix_evidence_identities_document_span",
+            "document_identity_id",
+            "start_offset",
+            "end_offset",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("document_identities.id"), index=True
+    )
+    fingerprint: Mapped[str] = mapped_column(String(71))
+    identity_version: Mapped[str] = mapped_column(String(16))
+    source_text_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    start_offset: Mapped[int] = mapped_column(Integer)
+    end_offset: Mapped[int] = mapped_column(Integer)
+    object_type: Mapped[str] = mapped_column(String(50), index=True)
+    language: Mapped[str] = mapped_column(String(35), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class MentionEvidenceIdentityORM(CoreBase):
+    """Maps one versioned raw mention row to its durable evidence identity."""
+
+    __tablename__ = "mention_evidence_identities"
+
+    mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), primary_key=True)
+    evidence_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("evidence_identities.id"), index=True
+    )
+    mapper_version: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ResolutionConstraintORM(CoreBase):
+    """Append-only human constraint anchored to durable evidence endpoints.
+
+    The existing ResolutionDecisionORM remains the source audit record and
+    keeps raw mention ids.  This parallel row is the stable representation
+    that a later resolver generation can remap without guessing.
+    """
+
+    __tablename__ = "resolution_constraints"
+    __table_args__ = (
+        CheckConstraint("decision IN ('same', 'different')", name="ck_resolution_constraint_value"),
+        UniqueConstraint("source_decision_id", name="uq_resolution_constraints_source_decision"),
+        Index(
+            "ix_resolution_constraints_evidence_pair",
+            "left_evidence_identity_id",
+            "right_evidence_identity_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_decision_id: Mapped[int] = mapped_column(ForeignKey("resolution_decisions.id"))
+    left_evidence_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("evidence_identities.id"), index=True
+    )
+    right_evidence_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("evidence_identities.id"), index=True
+    )
+    decision: Mapped[str] = mapped_column(String(16))
+    supersedes_constraint_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resolution_constraints.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ProvenanceORM(CoreBase):
     __tablename__ = "provenance"
 

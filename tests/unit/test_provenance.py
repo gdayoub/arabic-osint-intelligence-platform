@@ -21,6 +21,7 @@ def test_mention_offsets_must_match_document_text(session, ontology, blob_store)
             object_type="person",
             extractor_version=extractor,
             ontology=ontology,
+            language="en",
         )
 
 
@@ -38,6 +39,7 @@ def test_mention_rejects_unknown_object_type(session, ontology, blob_store):
             object_type="spaceship",  # not in config/ontology.yaml
             extractor_version=extractor,
             ontology=ontology,
+            language="en",
         )
 
 
@@ -54,6 +56,7 @@ def test_mention_and_entity_creation_record_provenance_back_to_document(session,
         object_type="person",
         extractor_version=extractor,
         ontology=ontology,
+        language="en",
     )
     entity = create_entity(
         session,
@@ -84,8 +87,8 @@ def test_link_entities_rejects_type_mismatch(session, ontology, blob_store):
     document = create_document(session, source="test", text="Joe Biden met Jill Biden.", content_hash="h4", blob_store=blob_store)
     extractor = register_extractor_version(session, "gazetteer", "0.1.0")
 
-    m1 = create_mention(session, document, "Joe Biden", 0, 9, "person", extractor, ontology)
-    m2 = create_mention(session, document, "Jill Biden", 14, 24, "person", extractor, ontology)
+    m1 = create_mention(session, document, "Joe Biden", 0, 9, "person", extractor, ontology, language="en")
+    m2 = create_mention(session, document, "Jill Biden", 14, 24, "person", extractor, ontology, language="en")
     person_a = create_entity(session, "person", "Joe Biden", {}, m1, extractor, ontology)
     person_b = create_entity(session, "person", "Jill Biden", {}, m2, extractor, ontology)
 
@@ -106,8 +109,8 @@ def test_link_entities_records_provenance_when_valid(session, ontology, blob_sto
     document = create_document(session, source="test", text="Joe Biden leads the White House.", content_hash="h5", blob_store=blob_store)
     extractor = register_extractor_version(session, "gazetteer", "0.1.0")
 
-    person_mention = create_mention(session, document, "Joe Biden", 0, 9, "person", extractor, ontology)
-    org_mention = create_mention(session, document, "White House", 20, 31, "organization", extractor, ontology)
+    person_mention = create_mention(session, document, "Joe Biden", 0, 9, "person", extractor, ontology, language="en")
+    org_mention = create_mention(session, document, "White House", 20, 31, "organization", extractor, ontology, language="en")
     person = create_entity(session, "person", "Joe Biden", {}, person_mention, extractor, ontology)
     org = create_entity(session, "organization", "White House", {}, org_mention, extractor, ontology)
 

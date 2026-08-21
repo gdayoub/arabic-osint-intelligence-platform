@@ -49,6 +49,7 @@ def main() -> None:
             object_type="person",
             extractor_version=extractor,
             ontology=ontology,
+            language="ar",
         )
         entity = create_entity(
             session,

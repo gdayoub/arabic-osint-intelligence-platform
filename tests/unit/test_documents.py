@@ -27,7 +27,17 @@ def test_document_text_survives_a_fresh_session_after_blob_round_trip(session: S
 
     document = create_document(session, source="test", text=text, content_hash="doc-1", blob_store=blob_store)
     extractor = register_extractor_version(session, "gazetteer", "0.1.0")
-    create_mention(session, document, mention_text, start, end, "person", extractor, ontology)
+    create_mention(
+        session,
+        document,
+        mention_text,
+        start,
+        end,
+        "person",
+        extractor,
+        ontology,
+        language="ar",
+    )
     session.commit()
     document_id = document.id
 
