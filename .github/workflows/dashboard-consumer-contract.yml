@@ -31,6 +31,12 @@ concurrency:
 
 jobs:
   george-portfolio:
+    # Forked pull requests cannot receive the private read-only deploy key.
+    # Same-repository PRs, main pushes, and manual checks all use the exact
+    # trusted consumer revision below.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -50,6 +56,7 @@ jobs:
           ref: 203a63b38f53bccfe28e0e53e02e4d0a2c603c4c
           path: consumer
           persist-credentials: false
+          ssh-key: ${{ secrets.PORTFOLIO_DEPLOY_KEY }}
 
       - uses: actions/setup-python@v5
         with:

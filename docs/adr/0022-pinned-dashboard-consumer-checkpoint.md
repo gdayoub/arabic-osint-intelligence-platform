@@ -25,8 +25,13 @@ The producer owns a consumer checkpoint lock under
 contract version, manifest digest, bundle digest, schema version, public
 route, full Vercel URL, and Cloudflare data URL.
 
-The compatibility workflow checks out the portfolio repository and revision
-as reviewed literals, then verifies that:
+The portfolio repository is private, so the public producer repository's
+default Actions token cannot read it. The workflow uses a dedicated read-only
+portfolio deploy key stored as the producer's `PORTFOLIO_DEPLOY_KEY` secret.
+It is limited to that repository and is skipped for forked pull requests,
+which do not receive repository secrets. The compatibility workflow checks
+out the portfolio repository and revision as reviewed literals, then verifies
+that:
 
 - the checked-out Git revision is the pinned full commit;
 - the consumer lock agrees with the producer checkpoint;
@@ -50,3 +55,5 @@ of third-party package scripts an explicit code-review decision.
 
 This adds CI time for `npm ci` and the portfolio build, but it replaces an
 implicit cross-repository dependency with an auditable, reversible checkpoint.
+Revoking the deploy key from the portfolio and deleting the producer secret
+immediately removes the extra read access.
