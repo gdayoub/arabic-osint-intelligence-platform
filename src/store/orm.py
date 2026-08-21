@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -45,6 +46,11 @@ class CoreBase(DeclarativeBase):
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _quoted_values(values: tuple[str, ...]) -> str:
+    """Render fixed Python constants as a SQL CHECK list."""
+    return ", ".join(f"'{value}'" for value in values)
 
 
 class ExtractorVersionORM(CoreBase):
@@ -339,6 +345,274 @@ class ResolutionConstraintORM(CoreBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+STABLE_ENTITY_GENERATION_MODES = ("observe",)
+STABLE_ENTITY_LINEAGE_RELATIONSHIPS = ("continued", "merged_into", "split_into")
+
+
+class StableEntityORM(CoreBase):
+    """A durable real-world identity independent of disposable clusters.
+
+    ``EntityORM`` remains the resolver's generation-local output.  A stable
+    entity is created once, is never rewritten, and receives an immutable
+    snapshot in every observed resolver generation.  Its presence in the
+    active snapshot, rather than a mutable flag on this row, determines
+    whether it is currently represented by evidence.
+    """
+
+    __tablename__ = "stable_entities"
+    __table_args__ = (
+        UniqueConstraint("stable_uid", name="uq_stable_entities_uid"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stable_uid: Mapped[str] = mapped_column(String(36), index=True)
+    object_type: Mapped[str] = mapped_column(String(50), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ResolverGenerationORM(CoreBase):
+    """One immutable, explicitly observed reconciliation input/output.
+
+    The only mutable coordination surface is
+    ``StableEntityResolutionStateORM``.  Generation rows never carry an
+    ``active`` flag, so a crash cannot leave a half-updated generation row
+    pretending to be current.
+    """
+
+    __tablename__ = "resolver_generations"
+    __table_args__ = (
+        CheckConstraint(
+            f"mode IN ({_quoted_values(STABLE_ENTITY_GENERATION_MODES)})",
+            name="ck_resolver_generation_mode",
+        ),
+        CheckConstraint("sequence > 0", name="ck_resolver_generation_sequence"),
+        UniqueConstraint("generation_uid", name="uq_resolver_generations_uid"),
+        UniqueConstraint("sequence", name="uq_resolver_generations_sequence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generation_uid: Mapped[str] = mapped_column(String(36), index=True)
+    sequence: Mapped[int] = mapped_column(PortableEventId)
+    mode: Mapped[str] = mapped_column(String(16))
+    parent_generation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resolver_generations.id"), nullable=True, index=True
+    )
+    resolver_extractor_version_id: Mapped[int] = mapped_column(
+        ForeignKey("extractor_versions.id"), index=True
+    )
+    reconciler_version: Mapped[str] = mapped_column(String(16))
+    input_digest: Mapped[str] = mapped_column(String(64))
+    constraint_status_counts: Mapped[dict[str, int]] = mapped_column(
+        PortableJSON, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class StableEntityResolutionStateORM(CoreBase):
+    """Small mutable pointer that serializes active observed generations.
+
+    This is deliberately a coordination cache, not historical evidence.  The
+    append-only generation, snapshot, membership, and lineage rows reconstruct
+    every past state if this singleton needs a forward repair.
+    """
+
+    __tablename__ = "stable_entity_resolution_state"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_stable_entity_resolution_state_singleton"),
+        CheckConstraint(
+            "max_generation_sequence >= 0",
+            name="ck_stable_entity_resolution_state_max_sequence",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    active_generation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resolver_generations.id"), nullable=True
+    )
+    max_generation_sequence: Mapped[int] = mapped_column(PortableEventId, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+
+class StableEntitySnapshotORM(CoreBase):
+    """The exact stable-entity state in one resolver generation.
+
+    Every known stable entity receives one row per observed generation.  An
+    absent row is intentional: it lets an as-of query distinguish "known in a
+    prior generation" from "present in this one" without reinterpreting the
+    latest historical membership as current evidence.
+    """
+
+    __tablename__ = "stable_entity_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "((is_present AND source_entity_id IS NOT NULL) "
+            "OR (NOT is_present AND source_entity_id IS NULL))",
+            name="ck_stable_entity_snapshot_source_when_present",
+        ),
+        UniqueConstraint(
+            "generation_id",
+            "stable_entity_id",
+            name="uq_stable_entity_snapshots_generation_entity",
+        ),
+        # Redundant with the primary key for lookup, but required as the
+        # referenced pair that proves each membership names this snapshot's
+        # actual generation rather than a caller-supplied generation ID.
+        UniqueConstraint(
+            "id",
+            "generation_id",
+            name="uq_stable_entity_snapshots_id_generation",
+        ),
+        Index(
+            "ix_stable_entity_snapshots_entity_generation",
+            "stable_entity_id",
+            "generation_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generation_id: Mapped[int] = mapped_column(
+        ForeignKey("resolver_generations.id"), index=True
+    )
+    stable_entity_id: Mapped[int] = mapped_column(ForeignKey("stable_entities.id"))
+    source_entity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("entities.id"), nullable=True, index=True
+    )
+    canonical_name: Mapped[str] = mapped_column(Text)
+    is_present: Mapped[bool] = mapped_column(Boolean)
+    membership_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class StableEntityMembershipORM(CoreBase):
+    """One durable evidence endpoint in a present stable-entity snapshot."""
+
+    __tablename__ = "stable_entity_memberships"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "generation_id"],
+            [
+                "stable_entity_snapshots.id",
+                "stable_entity_snapshots.generation_id",
+            ],
+            name="fk_stable_entity_memberships_snapshot_generation",
+        ),
+        UniqueConstraint(
+            "snapshot_id",
+            "evidence_identity_id",
+            name="uq_stable_entity_memberships_snapshot_evidence",
+        ),
+        UniqueConstraint(
+            "generation_id",
+            "evidence_identity_id",
+            name="uq_stable_entity_memberships_generation_evidence",
+        ),
+        # Supports the lineage-evidence composite foreign key below, which
+        # prevents a witness from naming evidence different from its linked
+        # current membership.
+        UniqueConstraint(
+            "id",
+            "evidence_identity_id",
+            name="uq_stable_entity_memberships_id_evidence",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id: Mapped[int] = mapped_column(Integer, index=True)
+    generation_id: Mapped[int] = mapped_column(Integer)
+    evidence_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("evidence_identities.id"), index=True
+    )
+    source_mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class StableEntityLineageORM(CoreBase):
+    """An append-only edge explaining continuity, a merge, or a split."""
+
+    __tablename__ = "stable_entity_lineage"
+    __table_args__ = (
+        CheckConstraint(
+            f"relationship IN ({_quoted_values(STABLE_ENTITY_LINEAGE_RELATIONSHIPS)})",
+            name="ck_stable_entity_lineage_relationship",
+        ),
+        CheckConstraint(
+            "((relationship = 'continued' AND from_stable_entity_id = to_stable_entity_id) "
+            "OR (relationship IN ('merged_into', 'split_into') "
+            "AND from_stable_entity_id <> to_stable_entity_id))",
+            name="ck_stable_entity_lineage_endpoints",
+        ),
+        UniqueConstraint(
+            "generation_id",
+            "from_stable_entity_id",
+            "to_stable_entity_id",
+            "relationship",
+            name="uq_stable_entity_lineage_generation_edge",
+        ),
+        Index(
+            "ix_stable_entity_lineage_from_generation",
+            "from_stable_entity_id",
+            "generation_id",
+        ),
+        Index(
+            "ix_stable_entity_lineage_to_generation",
+            "to_stable_entity_id",
+            "generation_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generation_id: Mapped[int] = mapped_column(
+        ForeignKey("resolver_generations.id"), index=True
+    )
+    from_stable_entity_id: Mapped[int] = mapped_column(ForeignKey("stable_entities.id"))
+    to_stable_entity_id: Mapped[int] = mapped_column(ForeignKey("stable_entities.id"))
+    relationship: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class StableEntityLineageEvidenceORM(CoreBase):
+    """One exact current membership that witnesses a lineage edge.
+
+    A lineage relationship is not an inference that should be trusted just
+    because it was named.  This append-only association records every durable
+    evidence identity shared by the predecessor and the current child, plus
+    the child membership that carries its source-span provenance.
+    """
+
+    __tablename__ = "stable_entity_lineage_evidence"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_membership_id", "evidence_identity_id"],
+            [
+                "stable_entity_memberships.id",
+                "stable_entity_memberships.evidence_identity_id",
+            ],
+            name="fk_stable_entity_lineage_evidence_membership_evidence",
+        ),
+        UniqueConstraint(
+            "lineage_id",
+            "evidence_identity_id",
+            name="uq_stable_entity_lineage_evidence_edge_evidence",
+        ),
+        Index(
+            "ix_stable_entity_lineage_evidence_membership",
+            "source_membership_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lineage_id: Mapped[int] = mapped_column(ForeignKey("stable_entity_lineage.id"), index=True)
+    evidence_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("evidence_identities.id"), index=True
+    )
+    source_membership_id: Mapped[int] = mapped_column(
+        Integer
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ProvenanceORM(CoreBase):
     __tablename__ = "provenance"
 
@@ -349,11 +623,6 @@ class ProvenanceORM(CoreBase):
     mention_id: Mapped[int | None] = mapped_column(ForeignKey("mentions.id"), nullable=True)
     extractor_version_id: Mapped[int] = mapped_column(ForeignKey("extractor_versions.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-def _quoted_values(values: tuple[str, ...]) -> str:
-    """Render fixed Python constants as a SQL CHECK list."""
-    return ", ".join(f"'{value}'" for value in values)
 
 
 class PipelineEventORM(CoreBase):
@@ -563,6 +832,10 @@ class AppendOnlyEventError(RuntimeError):
     """Raised when ORM code tries to mutate an operational event."""
 
 
+class AppendOnlyStableEntityError(RuntimeError):
+    """Raised when ORM code tries to rewrite stable-entity history."""
+
+
 @event.listens_for(PipelineEventORM, "before_update")
 def _reject_pipeline_event_update(_mapper, _connection, _target) -> None:  # noqa: ANN001
     raise AppendOnlyEventError("pipeline_events is append-only; append a new event")
@@ -571,3 +844,30 @@ def _reject_pipeline_event_update(_mapper, _connection, _target) -> None:  # noq
 @event.listens_for(PipelineEventORM, "before_delete")
 def _reject_pipeline_event_delete(_mapper, _connection, _target) -> None:  # noqa: ANN001
     raise AppendOnlyEventError("pipeline_events is append-only; events cannot be deleted")
+
+
+def _reject_stable_entity_history_mutation(_mapper, _connection, target) -> None:  # noqa: ANN001
+    table_name = target.__tablename__
+    raise AppendOnlyStableEntityError(
+        f"{table_name} is append-only; write a new generation instead"
+    )
+
+
+for _stable_history_model in (
+    StableEntityORM,
+    ResolverGenerationORM,
+    StableEntitySnapshotORM,
+    StableEntityMembershipORM,
+    StableEntityLineageORM,
+    StableEntityLineageEvidenceORM,
+):
+    event.listen(
+        _stable_history_model,
+        "before_update",
+        _reject_stable_entity_history_mutation,
+    )
+    event.listen(
+        _stable_history_model,
+        "before_delete",
+        _reject_stable_entity_history_mutation,
+    )

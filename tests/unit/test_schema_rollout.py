@@ -49,6 +49,7 @@ def test_rollout_plans_exact_linear_baseline_to_head(tmp_path):  # noqa: ANN001
             "0002_pipeline_event_ledger",
             "0003_publication_state",
             "0004_evidence_identity",
+            "0005_stable_entity_generations",
         )
     finally:
         engine.dispose()
@@ -209,3 +210,6 @@ def test_schema_upgrade_workflow_keeps_confirmation_and_postgres_preflight():
     assert '--confirmation "$CONFIRMATION"' in workflow
     assert '--recovery-reference "$RECOVERY_REFERENCE"' in workflow
     assert "python scripts/verify_core_schema.py" in workflow
+    assert "default: '0004_evidence_identity'" in workflow
+    assert "default: '0005_stable_entity_generations'" in workflow
+    assert "UPGRADE 0004_evidence_identity TO 0005_stable_entity_generations" in workflow

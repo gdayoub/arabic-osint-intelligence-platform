@@ -87,7 +87,7 @@ def test_0003_upgrades_to_0004_evidence_identity_without_rebuilding_core_tables(
             assert "document_identities" not in before
             assert "evidence_identities" not in before
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0004_evidence_identity")
 
         with engine.connect() as connection:
             assert current_revisions(connection) == ("0004_evidence_identity",)
@@ -98,6 +98,41 @@ def test_0003_upgrades_to_0004_evidence_identity_without_rebuilding_core_tables(
                 "mention_evidence_identities",
                 "resolution_constraints",
             } <= after
+            assert "stable_entities" not in after
+    finally:
+        engine.dispose()
+
+
+def test_0004_upgrades_to_0005_stable_entity_generations_without_rebuilding_identity_tables(
+    tmp_path,  # noqa: ANN001
+):
+    database_url = _sqlite_url(tmp_path, "0004-to-0005.sqlite")
+    config = make_alembic_config(database_url=database_url)
+    command.upgrade(config, "0004_evidence_identity")
+    engine = create_engine(database_url)
+
+    try:
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0004_evidence_identity",)
+            before = set(inspect(connection).get_table_names())
+            assert "stable_entities" not in before
+            assert "evidence_identities" in before
+
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0005_stable_entity_generations",)
+            after = set(inspect(connection).get_table_names())
+            assert {
+                "stable_entities",
+                "resolver_generations",
+                "stable_entity_resolution_state",
+                "stable_entity_snapshots",
+                "stable_entity_memberships",
+                "stable_entity_lineage",
+                "stable_entity_lineage_evidence",
+            } <= after
+            assert "evidence_identities" in after
             assert audit_head_schema(connection) == []
     finally:
         engine.dispose()

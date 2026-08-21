@@ -35,6 +35,7 @@ from src.resolve.cluster import cluster_pairs
 from src.resolve.features import MentionContext, compute_features
 from src.resolve.review import enqueue_review_pair, latest_decisions, ordered_pair
 from src.resolve.scorer import PairScorer
+from src.resolve.stable_entities import acquire_resolution_output_lock
 from src.store.database import get_core_session
 from src.store.orm import DocumentORM, EntityORM, MentionORM
 from src.store.provenance import add_entity_evidence, create_entity, register_extractor_version
@@ -171,6 +172,18 @@ def _partition_on_cannot_links(
     return partitions
 
 
+def _retract_live_entities(session: Session) -> int:
+    """Retire the previous disposable resolver generation without deleting it."""
+
+    previous = session.scalars(
+        select(EntityORM).where(EntityORM.retracted.is_(False))
+    ).all()
+    for row in previous:
+        row.retracted = True
+        row.retracted_reason = f"superseded by {EXTRACTOR_NAME} v{EXTRACTOR_VERSION}"
+    return len(previous)
+
+
 def resolve_all(
     session: Session,
     ontology: Ontology,
@@ -185,6 +198,15 @@ def resolve_all(
         raise ValueError("review_margin must be non-negative")
     if review_limit < 0:
         raise ValueError("review_limit must be non-negative")
+    # Stable observation shares this transaction-scoped PostgreSQL lock.  It
+    # protects the legacy output from being read halfway through retraction
+    # and rebuilding, but does not activate any stable-entity behavior.
+    # ``session.execute`` in the PostgreSQL advisory-lock helper would trigger
+    # autoflush by default.  Keep caller-pending entity changes behind the
+    # shared lock, then deliberately flush them below.
+    with session.no_autoflush:
+        acquire_resolution_output_lock(session)
+    session.flush()
     adapter = adapter or ArabicAdapter()
     scorer = scorer or PairScorer()
     gazetteer = gazetteer if gazetteer is not None else GazetteerExtractor()
@@ -193,6 +215,10 @@ def resolve_all(
     contexts = load_mention_contexts(session, adapter)
     stats.mentions = len(contexts)
     if not contexts:
+        # An all-retracted corpus is still a resolver generation.  Retiring
+        # its prior disposable entities lets an explicit observer record an
+        # honest all-absent stable snapshot instead of seeing stale output.
+        stats.entities_retracted = _retract_live_entities(session)
         return stats
 
     mention_rows = {
@@ -374,11 +400,7 @@ def resolve_all(
 
     # retract the previous generation before writing the new one. P6 says
     # retract and never delete so last week's answer stays on record.
-    previous = session.scalars(select(EntityORM).where(EntityORM.retracted.is_(False))).all()
-    for row in previous:
-        row.retracted = True
-        row.retracted_reason = f"superseded by {EXTRACTOR_NAME} v{EXTRACTOR_VERSION}"
-    stats.entities_retracted = len(previous)
+    stats.entities_retracted = _retract_live_entities(session)
 
     for representative_cluster in result.clusters:
         # expand each representative back into every mention that shared its

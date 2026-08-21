@@ -265,3 +265,74 @@ def test_postgres_pipeline_events_trigger_rejects_update_and_delete():
                 assert row.commit_sha == "abc123"
         finally:
             engine.dispose()
+
+
+@pytest.mark.skipif(
+    "stable_entities" not in CoreBase.metadata.tables,
+    reason="the stable-entity generation revision is not present in this checkout",
+)
+def test_postgres_stable_entity_history_trigger_rejects_update_and_delete():
+    with _disposable_database() as database_url:
+        command.upgrade(make_alembic_config(database_url=database_url), "head")
+        engine = create_engine(database_url)
+
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO stable_entities "
+                        "(stable_uid, object_type, created_at) VALUES "
+                        "('89f93f90-d068-4ee5-a9e3-8c5df8822d74', 'person', CURRENT_TIMESTAMP)"
+                    )
+                )
+
+                with pytest.raises(DBAPIError, match="append-only"):
+                    with connection.begin_nested():
+                        connection.execute(
+                            text(
+                                "UPDATE stable_entities SET object_type = 'location' "
+                                "WHERE stable_uid = '89f93f90-d068-4ee5-a9e3-8c5df8822d74'"
+                            )
+                        )
+
+                with pytest.raises(DBAPIError, match="append-only"):
+                    with connection.begin_nested():
+                        connection.execute(
+                            text(
+                                "DELETE FROM stable_entities "
+                                "WHERE stable_uid = '89f93f90-d068-4ee5-a9e3-8c5df8822d74'"
+                            )
+                        )
+
+                value = connection.scalar(
+                    text(
+                        "SELECT object_type FROM stable_entities "
+                        "WHERE stable_uid = '89f93f90-d068-4ee5-a9e3-8c5df8822d74'"
+                    )
+                )
+                assert value == "person"
+                trigger_tables = set(
+                    connection.scalars(
+                        text(
+                            "SELECT relation.relname FROM pg_trigger trigger "
+                            "JOIN pg_class relation ON relation.oid = trigger.tgrelid "
+                            "WHERE trigger.tgname IN ("
+                            "'trg_stable_entities_append_only', "
+                            "'trg_resolver_generations_append_only', "
+                            "'trg_stable_entity_snapshots_append_only', "
+                            "'trg_stable_entity_memberships_append_only', "
+                            "'trg_stable_entity_lineage_append_only', "
+                            "'trg_stable_entity_lineage_evidence_append_only')"
+                        )
+                    )
+                )
+                assert {
+                    "stable_entities",
+                    "resolver_generations",
+                    "stable_entity_snapshots",
+                    "stable_entity_memberships",
+                    "stable_entity_lineage",
+                    "stable_entity_lineage_evidence",
+                } <= trigger_tables
+        finally:
+            engine.dispose()
