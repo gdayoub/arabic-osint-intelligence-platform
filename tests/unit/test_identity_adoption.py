@@ -7,11 +7,18 @@ import sys
 from pathlib import Path
 
 from alembic import command
+import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from scripts import adopt_m42_identity
-from src.store.identity import apply_identity_adoption, legacy_document_uid
+import src.store.identity as identity
+from src.store.identity import (
+    IdentityInvariantError,
+    apply_identity_adoption,
+    legacy_document_uid,
+    plan_identity_adoption,
+)
 from src.store.orm import (
     DocumentIdentityORM,
     DocumentORM,
@@ -220,6 +227,116 @@ def test_adoption_keeps_a_preexisting_new_document_uid_when_only_mapping_is_miss
         )
     ) == original_uid
     assert session.get(MentionEvidenceIdentityORM, raw_legacy_mention.id) is not None
+
+
+def test_read_only_plan_resolves_each_document_once_and_keeps_unsafe_span_rows(
+    session, blob_store, monkeypatch
+):
+    """A detached audit must not turn repeated mentions into repeated R2 reads."""
+
+    extractor = ExtractorVersionORM(name="legacy_gazetteer", version="0.9.0")
+    first_document = DocumentORM(
+        source="legacy",
+        text="alpha beta",
+        content_hash="cache-first",
+    )
+    second_document = DocumentORM(
+        source="legacy",
+        text="gamma",
+        content_hash="cache-second",
+    )
+    session.add_all([extractor, first_document, second_document])
+    session.flush()
+    mentions = [
+        # First document, bad text at an otherwise valid span.
+        MentionORM(
+            document_id=first_document.id,
+            text="wrong",
+            start_offset=0,
+            end_offset=5,
+            object_type="person",
+            extractor_version_id=extractor.id,
+        ),
+        # A valid mention from another document deliberately sits between the
+        # two first-document mentions, proving grouping is not relying on row
+        # adjacency.
+        MentionORM(
+            document_id=second_document.id,
+            text="gamma",
+            start_offset=0,
+            end_offset=5,
+            object_type="person",
+            extractor_version_id=extractor.id,
+        ),
+        # Same first document, unsafe offsets.
+        MentionORM(
+            document_id=first_document.id,
+            text="x",
+            start_offset=20,
+            end_offset=21,
+            object_type="person",
+            extractor_version_id=extractor.id,
+        ),
+    ]
+    session.add_all(mentions)
+    session.flush()
+    first_document_id = first_document.id
+    second_document_id = second_document.id
+    first_mention_id, _, third_mention_id = (mention.id for mention in mentions)
+    session.commit()
+
+    calls: list[int] = []
+    original_resolve = identity.resolve_document_text
+
+    def count_resolutions(document, store):  # noqa: ANN001
+        # release_database_connection=True must leave the slow blob phase
+        # without an open SQLAlchemy transaction.
+        assert session.in_transaction() is False
+        calls.append(document.id)
+        return original_resolve(document, store)
+
+    monkeypatch.setattr(identity, "resolve_document_text", count_resolutions)
+    report = plan_identity_adoption(
+        session,
+        blob_store=blob_store,
+        extractor_languages={"legacy_gazetteer": "ar"},
+        release_database_connection=True,
+    )
+
+    assert calls == [first_document_id, second_document_id]
+    assert report.ready is False
+    assert [issue.as_dict() for issue in report.errors] == [
+        {
+            "kind": "invalid_source_span",
+            "row_id": first_mention_id,
+            "detail": "mention text does not match original source offsets",
+        },
+        {
+            "kind": "invalid_source_span",
+            "row_id": third_mention_id,
+            "detail": "mention offsets are outside original source text",
+        },
+    ]
+    # A read-only plan stays fail-closed: even its successfully validated
+    # second-document mention cannot create a partial mapping next to errors.
+    assert session.scalar(select(func.count()).select_from(DocumentIdentityORM)) == 0
+    assert session.scalar(select(func.count()).select_from(MentionEvidenceIdentityORM)) == 0
+
+
+def test_detached_read_only_plan_refuses_to_rollback_a_callers_transaction(session, blob_store):
+    # A dedicated CLI session starts clean.  A library caller might instead
+    # have work in progress, which a connection-release rollback must never
+    # discard merely to speed an audit.
+    session.add(DocumentORM(source="pending", text="text", content_hash="pending"))
+
+    with pytest.raises(IdentityInvariantError, match="caller-owned transaction"):
+        plan_identity_adoption(
+            session,
+            blob_store=blob_store,
+            release_database_connection=True,
+        )
+
+    assert len(session.new) == 1
 
 
 def test_manual_adoption_workflow_checks_before_any_confirmed_apply():

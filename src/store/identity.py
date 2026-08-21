@@ -544,6 +544,67 @@ class _AdoptionMentionInput:
 
 
 @dataclass(frozen=True, slots=True)
+class _AdoptionDocument:
+    """The loaded fields needed to validate one legacy document's text."""
+
+    id: int
+    text: str | None
+    text_blob_key: str | None
+    text_sha256: str | None
+    text_length: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _AdoptionMention:
+    """A detached raw mention used by the read-only adoption planner."""
+
+    id: int
+    document_id: int
+    text: str
+    start_offset: int
+    end_offset: int
+    object_type: str
+    extractor_version_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class _AdoptionDecision:
+    """The decision fields needed to prove both endpoints are mappable."""
+
+    id: int
+    left_mention_id: int
+    right_mention_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingAdoptionMention:
+    """A mention whose cheap checks passed before source validation."""
+
+    mention: _AdoptionMention
+    document: _AdoptionDocument
+    language: str
+
+
+@dataclass(frozen=True, slots=True)
+class _IdentityAdoptionSnapshot:
+    """All database state the slow, read-only blob validation needs.
+
+    No ORM instance escapes this snapshot.  The CLI can therefore release its
+    database connection before fetching source blobs without expiring fields
+    midway through validation.
+    """
+
+    documents: tuple[_AdoptionDocument, ...]
+    document_identity_ids: frozenset[int]
+    mentions: tuple[_AdoptionMention, ...]
+    mapped_mention_ids: frozenset[int]
+    extractor_names_by_id: dict[int, str]
+    decisions: tuple[_AdoptionDecision, ...]
+    constrained_decision_ids: frozenset[int]
+    remap_status_counts: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
 class _IdentityAdoptionPlan:
     report: IdentityAdoptionReport
     document_ids: tuple[int, ...]
@@ -558,11 +619,28 @@ def plan_identity_adoption(
     extractor_languages: Mapping[str, str] | None = None,
     default_language: str | None = None,
     valid_object_types: Iterable[str] | None = None,
+    release_database_connection: bool = False,
 ) -> IdentityAdoptionReport:
-    """Read-only validation/report for an idempotent legacy identity adoption."""
+    """Read-only validation/report for an idempotent legacy identity adoption.
 
-    return _plan_identity_adoption(
-        session,
+    ``release_database_connection`` is for a clean, dedicated audit session
+    such as the production CLI.  It snapshots every required database row,
+    returns that connection before potentially slow R2 reads, and then
+    validates the detached snapshot.  It deliberately refuses a caller-owned
+    transaction so this convenience can never roll back uncommitted work.
+    """
+
+    if release_database_connection and session.in_transaction():
+        raise IdentityInvariantError(
+            "cannot release a caller-owned transaction during identity adoption planning"
+        )
+
+    snapshot = _load_identity_adoption_snapshot(session)
+    if release_database_connection:
+        session.rollback()
+
+    return _plan_identity_adoption_snapshot(
+        snapshot,
         blob_store=blob_store,
         extractor_languages=extractor_languages,
         default_language=default_language,
@@ -657,6 +735,89 @@ def _plan_identity_adoption(
     default_language: str | None,
     valid_object_types: Iterable[str] | None,
 ) -> _IdentityAdoptionPlan:
+    return _plan_identity_adoption_snapshot(
+        _load_identity_adoption_snapshot(session),
+        blob_store=blob_store,
+        extractor_languages=extractor_languages,
+        default_language=default_language,
+        valid_object_types=valid_object_types,
+    )
+
+
+def _load_identity_adoption_snapshot(session: Session) -> _IdentityAdoptionSnapshot:
+    """Load every database fact before the planner touches slow blob storage.
+
+    This is intentionally a finite set of small relational rows.  The raw
+    document body is left in blob storage and is resolved later, once per
+    document, by _plan_identity_adoption_snapshot.
+    """
+
+    documents = tuple(
+        _AdoptionDocument(
+            id=row.id,
+            text=row.text,
+            text_blob_key=row.text_blob_key,
+            text_sha256=row.text_sha256,
+            text_length=row.text_length,
+        )
+        for row in session.scalars(select(DocumentORM).order_by(DocumentORM.id))
+    )
+    document_identity_ids = frozenset(
+        session.scalars(select(DocumentIdentityORM.document_id))
+    )
+    mentions = tuple(
+        _AdoptionMention(
+            id=row.id,
+            document_id=row.document_id,
+            text=row.text,
+            start_offset=row.start_offset,
+            end_offset=row.end_offset,
+            object_type=row.object_type,
+            extractor_version_id=row.extractor_version_id,
+        )
+        for row in session.scalars(select(MentionORM).order_by(MentionORM.id))
+    )
+    mapped_mention_ids = frozenset(
+        session.scalars(select(MentionEvidenceIdentityORM.mention_id))
+    )
+    extractor_names_by_id = {
+        row.id: row.name for row in session.scalars(select(ExtractorVersionORM))
+    }
+    decisions = tuple(
+        _AdoptionDecision(
+            id=row.id,
+            left_mention_id=row.left_mention_id,
+            right_mention_id=row.right_mention_id,
+        )
+        for row in session.scalars(select(ResolutionDecisionORM).order_by(ResolutionDecisionORM.id))
+    )
+    constrained_decision_ids = frozenset(
+        session.scalars(select(ResolutionConstraintORM.source_decision_id))
+    )
+    remap_status_counts: dict[str, int] = defaultdict(int)
+    for remap in remap_resolution_constraints(session):
+        remap_status_counts[remap.status] += 1
+
+    return _IdentityAdoptionSnapshot(
+        documents=documents,
+        document_identity_ids=document_identity_ids,
+        mentions=mentions,
+        mapped_mention_ids=mapped_mention_ids,
+        extractor_names_by_id=extractor_names_by_id,
+        decisions=decisions,
+        constrained_decision_ids=constrained_decision_ids,
+        remap_status_counts=dict(remap_status_counts),
+    )
+
+
+def _plan_identity_adoption_snapshot(
+    snapshot: _IdentityAdoptionSnapshot,
+    *,
+    blob_store: BlobStore,
+    extractor_languages: Mapping[str, str] | None,
+    default_language: str | None,
+    valid_object_types: Iterable[str] | None,
+) -> _IdentityAdoptionPlan:
     normalized_languages = {
         name: canonical_language(language)
         for name, language in (extractor_languages or {}).items()
@@ -664,71 +825,75 @@ def _plan_identity_adoption(
     normalized_default = canonical_language(default_language) if default_language is not None else None
     allowed_types = frozenset(valid_object_types) if valid_object_types is not None else None
 
-    documents = list(session.scalars(select(DocumentORM).order_by(DocumentORM.id)))
+    documents = snapshot.documents
     document_by_id = {row.id: row for row in documents}
-    document_identity_ids = set(
-        session.scalars(select(DocumentIdentityORM.document_id))
-    )
+    document_identity_ids = snapshot.document_identity_ids
     missing_document_ids = tuple(
         row.id for row in documents if row.id not in document_identity_ids
     )
 
-    mentions = list(session.scalars(select(MentionORM).order_by(MentionORM.id)))
-    mapped_mention_ids = set(session.scalars(select(MentionEvidenceIdentityORM.mention_id)))
-    extractor_by_id = {
-        row.id: row
-        for row in session.scalars(select(ExtractorVersionORM))
-    }
-    issues: list[IdentityAdoptionIssue] = []
-    mention_inputs: list[_AdoptionMentionInput] = []
+    mentions = snapshot.mentions
+    mapped_mention_ids = snapshot.mapped_mention_ids
+    extractor_names_by_id = snapshot.extractor_names_by_id
 
+    # Static checks remain per mention.  The deferred source checks below are
+    # grouped by document so repeated legacy mentions never trigger repeated
+    # remote blob reads.  The only raw text held at once is the current
+    # document's text, which bounds the planner's text memory independent of
+    # corpus size.
+    mention_results: dict[int, _AdoptionMentionInput | IdentityAdoptionIssue] = {}
+    pending_by_document: dict[int, list[_PendingAdoptionMention]] = {}
     for mention in mentions:
         if mention.id in mapped_mention_ids:
             continue
         document = document_by_id.get(mention.document_id)
         if document is None:
-            issues.append(
-                IdentityAdoptionIssue(
-                    "missing_document",
-                    mention.id,
-                    f"mention references absent document {mention.document_id}",
-                )
+            mention_results[mention.id] = IdentityAdoptionIssue(
+                "missing_document",
+                mention.id,
+                f"mention references absent document {mention.document_id}",
             )
             continue
         if allowed_types is not None and mention.object_type not in allowed_types:
-            issues.append(
-                IdentityAdoptionIssue(
-                    "invalid_object_type",
-                    mention.id,
-                    f"object_type {mention.object_type!r} is not declared by the supplied ontology",
-                )
+            mention_results[mention.id] = IdentityAdoptionIssue(
+                "invalid_object_type",
+                mention.id,
+                f"object_type {mention.object_type!r} is not declared by the supplied ontology",
             )
             continue
 
-        extractor = extractor_by_id.get(mention.extractor_version_id)
-        if extractor is None:
-            issues.append(
-                IdentityAdoptionIssue(
-                    "missing_extractor_version",
-                    mention.id,
-                    f"extractor version {mention.extractor_version_id} is absent",
-                )
+        extractor_name = extractor_names_by_id.get(mention.extractor_version_id)
+        if extractor_name is None:
+            mention_results[mention.id] = IdentityAdoptionIssue(
+                "missing_extractor_version",
+                mention.id,
+                f"extractor version {mention.extractor_version_id} is absent",
             )
             continue
-        language = normalized_languages.get(extractor.name, normalized_default)
+        language = normalized_languages.get(extractor_name, normalized_default)
         if language is None:
-            issues.append(
-                IdentityAdoptionIssue(
-                    "missing_language",
-                    mention.id,
-                    f"no language mapping for extractor {extractor.name!r}; "
-                    "pass --extractor-language or --default-language",
-                )
+            mention_results[mention.id] = IdentityAdoptionIssue(
+                "missing_language",
+                mention.id,
+                f"no language mapping for extractor {extractor_name!r}; "
+                "pass --extractor-language or --default-language",
             )
             continue
+        pending_by_document.setdefault(document.id, []).append(
+            _PendingAdoptionMention(
+                mention=mention,
+                document=document,
+                language=language,
+            )
+        )
 
+    for pending_mentions in pending_by_document.values():
+        document = pending_mentions[0].document
         try:
-            text = resolve_document_text(document, blob_store)
+            # ``resolve_document_text`` only reads the five scalar attributes
+            # represented by _AdoptionDocument, so the detached snapshot keeps
+            # its existing blob/hash validation behavior exactly.
+            text = resolve_document_text(document, blob_store)  # type: ignore[arg-type]
             actual_hash = sha256_text(text)
             if document.text_sha256 is not None and document.text_sha256 != actual_hash:
                 raise IdentityInvariantError(
@@ -738,28 +903,54 @@ def _plan_identity_adoption(
                 raise IdentityInvariantError(
                     f"document text length is {document.text_length}, source text length is {len(text)}"
                 )
-            if not (0 <= mention.start_offset < mention.end_offset <= len(text)):
-                raise IdentityInvariantError("mention offsets are outside original source text")
-            if text[mention.start_offset : mention.end_offset] != mention.text:
-                raise IdentityInvariantError("mention text does not match original source offsets")
         except (IdentityInvariantError, KeyError, ValueError) as exc:
-            issues.append(
-                IdentityAdoptionIssue("invalid_source_span", mention.id, str(exc)))
+            for pending in pending_mentions:
+                mention_results[pending.mention.id] = IdentityAdoptionIssue(
+                    "invalid_source_span",
+                    pending.mention.id,
+                    str(exc),
+                )
             continue
 
-        mention_inputs.append(
-            _AdoptionMentionInput(
+        for pending in pending_mentions:
+            mention = pending.mention
+            try:
+                if not (0 <= mention.start_offset < mention.end_offset <= len(text)):
+                    raise IdentityInvariantError("mention offsets are outside original source text")
+                if text[mention.start_offset : mention.end_offset] != mention.text:
+                    raise IdentityInvariantError(
+                        "mention text does not match original source offsets"
+                    )
+            except IdentityInvariantError as exc:
+                mention_results[mention.id] = IdentityAdoptionIssue(
+                    "invalid_source_span",
+                    mention.id,
+                    str(exc),
+                )
+                continue
+            mention_results[mention.id] = _AdoptionMentionInput(
                 mention_id=mention.id,
                 document_id=document.id,
                 source_text_sha256=actual_hash,
-                language=language,
+                language=pending.language,
             )
-        )
 
-    decisions = list(session.scalars(select(ResolutionDecisionORM).order_by(ResolutionDecisionORM.id)))
-    constrained_decision_ids = set(
-        session.scalars(select(ResolutionConstraintORM.source_decision_id))
-    )
+    # The old loop emitted mention issues in mention-id order even when the
+    # blobs happened to be shared.  Reconstruct that order after grouping so
+    # the JSON audit remains stable for operators and tests.
+    issues: list[IdentityAdoptionIssue] = []
+    mention_inputs: list[_AdoptionMentionInput] = []
+    for mention in mentions:
+        result = mention_results.get(mention.id)
+        if result is None:
+            continue
+        if isinstance(result, IdentityAdoptionIssue):
+            issues.append(result)
+        else:
+            mention_inputs.append(result)
+
+    decisions = snapshot.decisions
+    constrained_decision_ids = snapshot.constrained_decision_ids
     mappable_mention_ids = mapped_mention_ids | {item.mention_id for item in mention_inputs}
     missing_decision_ids: list[int] = []
     for decision in decisions:
@@ -782,10 +973,6 @@ def _plan_identity_adoption(
             continue
         missing_decision_ids.append(decision.id)
 
-    remap_counts: dict[str, int] = defaultdict(int)
-    for remap in remap_resolution_constraints(session):
-        remap_counts[remap.status] += 1
-
     report = IdentityAdoptionReport(
         documents_total=len(documents),
         document_identities_existing=len(document_identity_ids),
@@ -797,7 +984,7 @@ def _plan_identity_adoption(
         constraints_existing=len(constrained_decision_ids),
         constraints_missing=len(decisions) - len(constrained_decision_ids),
         errors=tuple(issues),
-        remap_status_counts=dict(remap_counts),
+        remap_status_counts=dict(snapshot.remap_status_counts),
     )
     return _IdentityAdoptionPlan(
         report=report,

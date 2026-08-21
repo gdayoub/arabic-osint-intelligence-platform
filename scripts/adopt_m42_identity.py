@@ -126,7 +126,15 @@ def main() -> int:
         }
         with Session(engine) as session:
             if args.check:
-                report = plan_identity_adoption(session, **kwargs)
+                # The audit can spend minutes validating R2 source blobs. It
+                # snapshots all relational state and returns its clean Neon
+                # connection before that slow work, so the check never tries
+                # to reuse an idle SSL connection at the end of the scan.
+                report = plan_identity_adoption(
+                    session,
+                    release_database_connection=True,
+                    **kwargs,
+                )
                 _print_json(report.as_dict(mode=mode))
                 return 0 if report.ready else 1
 
