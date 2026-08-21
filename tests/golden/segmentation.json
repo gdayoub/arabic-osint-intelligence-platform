@@ -1,0 +1,108 @@
+{
+  "sentence_cases": [
+    {
+      "id": "arabic_terminal_marks_and_quotes",
+      "language": "ar",
+      "text": "قالت الوزارة: «وصل الوفد إلى بغداد.» ثم غادر مساءً؟ نعم!",
+      "spans": [
+        {"start": 0, "end": 36, "text": "قالت الوزارة: «وصل الوفد إلى بغداد.»"},
+        {"start": 37, "end": 51, "text": "ثم غادر مساءً؟"},
+        {"start": 52, "end": 56, "text": "نعم!"}
+      ]
+    },
+    {
+      "id": "arabic_decimal_and_ellipsis",
+      "language": "ar",
+      "text": "بلغ الرقم 3.14 اليوم. ثم انتظروا... وانتهى البيان",
+      "spans": [
+        {"start": 0, "end": 21, "text": "بلغ الرقم 3.14 اليوم."},
+        {"start": 22, "end": 35, "text": "ثم انتظروا..."},
+        {"start": 36, "end": 49, "text": "وانتهى البيان"}
+      ]
+    },
+    {
+      "id": "english_titles_decimals_and_quotes",
+      "language": "en",
+      "text": "Dr. Smith measured 3.14. He asked, \"Ready?\" Then left...",
+      "spans": [
+        {"start": 0, "end": 24, "text": "Dr. Smith measured 3.14."},
+        {"start": 25, "end": 43, "text": "He asked, \"Ready?\""},
+        {"start": 44, "end": 56, "text": "Then left..."}
+      ]
+    },
+    {
+      "id": "english_initialism",
+      "language": "en",
+      "text": "U.S. officials met in New York. They returned.",
+      "spans": [
+        {"start": 0, "end": 31, "text": "U.S. officials met in New York."},
+        {"start": 32, "end": 46, "text": "They returned."}
+      ]
+    },
+    {
+      "id": "explicit_paragraph_stops_unfinished_sentence",
+      "language": "en",
+      "text": "First unfinished line\n\nSecond starts here.",
+      "spans": [
+        {"start": 0, "end": 21, "text": "First unfinished line"},
+        {"start": 23, "end": 42, "text": "Second starts here."}
+      ]
+    }
+  ],
+  "paragraph_cases": [
+    {
+      "id": "explicit_blank_lines",
+      "language": "ar",
+      "text": "الفقرة الأولى.\n\nSecond paragraph.\n\n\nالفقرة الثالثة.",
+      "spans": [
+        {"start": 0, "end": 14, "text": "الفقرة الأولى."},
+        {"start": 16, "end": 33, "text": "Second paragraph."},
+        {"start": 36, "end": 51, "text": "الفقرة الثالثة."}
+      ]
+    },
+    {
+      "id": "single_newline_is_not_a_paragraph",
+      "language": "en",
+      "text": "First line wraps\nonto the same source paragraph.",
+      "spans": [
+        {"start": 0, "end": 48, "text": "First line wraps\nonto the same source paragraph."}
+      ]
+    },
+    {
+      "id": "flattened_current_scraper_text_is_one_paragraph",
+      "language": "ar",
+      "text": "First sentence. Second sentence. جملة ثالثة.",
+      "spans": [
+        {"start": 0, "end": 44, "text": "First sentence. Second sentence. جملة ثالثة."}
+      ]
+    },
+    {
+      "id": "crlf_blank_lines",
+      "language": "en",
+      "text": "Alpha\r\n\r\nBeta\r\n \r\nGamma",
+      "spans": [
+        {"start": 0, "end": 5, "text": "Alpha"},
+        {"start": 9, "end": 13, "text": "Beta"},
+        {"start": 18, "end": 23, "text": "Gamma"}
+      ]
+    },
+    {
+      "id": "blank_line_run_with_horizontal_whitespace",
+      "language": "en",
+      "text": "Alpha\r\n \r\n \r\nBeta",
+      "spans": [
+        {"start": 0, "end": 5, "text": "Alpha"},
+        {"start": 13, "end": 17, "text": "Beta"}
+      ]
+    },
+    {
+      "id": "outer_whitespace_does_not_create_empty_paragraphs",
+      "language": "en",
+      "text": "\n\n  First.\n\n Second.  \n\n",
+      "spans": [
+        {"start": 4, "end": 10, "text": "First."},
+        {"start": 13, "end": 20, "text": "Second."}
+      ]
+    }
+  ]
+}

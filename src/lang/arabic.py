@@ -12,7 +12,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from src.lang.base import AlignedText
+from src.lang.base import AlignedText, SegmentationSpec, TextSpan
+from src.lang.segmentation import segment_explicit_paragraphs, segment_sentences
 
 # tatweel is a stretchy character people stick in the middle of words to make
 # them look nice. it carries zero meaning so i drop it.
@@ -75,6 +76,12 @@ DEFINITE_ARTICLE = "ال"
 
 _ARABIC_BLOCK = re.compile(r"[؀-ۿ]")
 
+# These are deliberately small rule sets, not a claim of full Arabic NLP.
+# M5 evidence needs deterministic boundaries now; a future behavior change
+# receives a new SegmentationSpec version instead of rewriting old meaning.
+_ARABIC_SENTENCE_MARKS = frozenset(".!؟!…")
+_ARABIC_TITLE_ABBREVIATIONS = frozenset({"د", "أ", "م", "ص", "ج"})
+
 # rough letter to latin map. one option each so i get a base spelling and then
 # i vary the vowels after. this is deliberately basic. M5 is where romanization
 # gets done properly with real candidate generation.
@@ -106,6 +113,7 @@ _KNOWN_ROMANIZATIONS = {
 
 class ArabicAdapter:
     code = "ar"
+    segmentation = SegmentationSpec(name="arabic_rule_segmenter", version="1.0.0")
 
     def detect(self, text: str) -> float:
         """fraction of the letters that sit in the arabic unicode block.
@@ -259,3 +267,54 @@ class ArabicAdapter:
         # dict.fromkeys keeps the first occurrence and drops later duplicates
         # and unlike set() it does not scramble the order
         return list(dict.fromkeys(candidate for candidate in out if candidate))
+
+    def segment_sentences(self, text: str) -> list[TextSpan]:
+        """return exact original-text sentences using Arabic punctuation."""
+        return segment_sentences(
+            text,
+            terminal_marks=_ARABIC_SENTENCE_MARKS,
+            is_terminal=_is_arabic_sentence_terminal,
+        )
+
+    def segment_paragraphs(self, text: str) -> list[TextSpan]:
+        """return only blank-line paragraphs already present in the source."""
+        return segment_explicit_paragraphs(text)
+
+
+def _is_arabic_sentence_terminal(text: str, index: int) -> bool:
+    """recognize a terminal mark without mistaking decimals/titles for one."""
+    char = text[index]
+    if char in {"!", "؟", "…"}:
+        return True
+    if char != ".":
+        return False
+
+    # Let the first dot consume a full ellipsis.  Later dots in that same run
+    # are never reached because the shared helper advances past all of them.
+    if index + 1 < len(text) and text[index + 1] == ".":
+        return True
+    if index > 0 and text[index - 1] == ".":
+        return False
+    if _is_decimal_point(text, index):
+        return False
+    if index + 1 < len(text) and text[index + 1].isalnum():
+        return False
+
+    previous = _previous_token(text, index)
+    return previous not in _ARABIC_TITLE_ABBREVIATIONS
+
+
+def _is_decimal_point(text: str, index: int) -> bool:
+    return (
+        index > 0
+        and index + 1 < len(text)
+        and text[index - 1].isdigit()
+        and text[index + 1].isdigit()
+    )
+
+
+def _previous_token(text: str, index: int) -> str:
+    start = index
+    while start > 0 and not text[start - 1].isspace():
+        start -= 1
+    return text[start:index]

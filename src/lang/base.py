@@ -44,6 +44,70 @@ class AlignedText:
         return self.source_offsets[start], self.source_offsets[end - 1] + 1
 
 
+@dataclass(frozen=True, slots=True, init=False)
+class TextSpan:
+    """an exact half-open slice of the original document text.
+
+    this deliberately holds the source substring, not a normalized or
+    translated copy.  ``start`` and ``end`` use Python's unicode code-point
+    offsets, exactly like ``Mention``.  That lets a later evidence artifact
+    prove its boundary with ``document_text[span.start:span.end] == span.text``.
+
+    Construction requires the original source text, so a caller cannot pair
+    valid-looking offsets with a same-length but different substring.
+    :meth:`from_source` is a named convenience for call sites that read more
+    clearly that way.  ``assert_matches`` is the stricter later check when a
+    document is reloaded from storage.
+    """
+
+    start: int
+    end: int
+    text: str
+
+    def __init__(self, source_text: str, start: int, end: int) -> None:
+        if start < 0:
+            raise ValueError("TextSpan start cannot be negative")
+        if end < start:
+            raise ValueError("TextSpan end cannot be before start")
+        if end > len(source_text):
+            raise ValueError(
+                f"TextSpan bounds {start}:{end} are outside source length {len(source_text)}"
+            )
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "end", end)
+        object.__setattr__(self, "text", source_text[start:end])
+
+    @classmethod
+    def from_source(cls, source_text: str, start: int, end: int) -> TextSpan:
+        """make a span by slicing the original text after validating bounds."""
+        return cls(source_text, start, end)
+
+    def assert_matches(self, source_text: str) -> None:
+        """raise if this span no longer names the exact original substring."""
+        if self.end > len(source_text) or source_text[self.start : self.end] != self.text:
+            raise ValueError("TextSpan does not match the supplied source text")
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentationSpec:
+    """the stable identity of one adapter's boundary rules.
+
+    sentence boundaries become provenance once M5 evidence snippets and M6
+    graph scopes depend on them.  A behavior change must therefore bump this
+    version instead of silently changing which source characters a previously
+    recorded sentence means.
+    """
+
+    name: str
+    version: str
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("SegmentationSpec name cannot be empty")
+        if not self.version:
+            raise ValueError("SegmentationSpec version cannot be empty")
+
+
 @runtime_checkable
 class LanguageAdapter(Protocol):
     """what every language has to be able to do.
@@ -60,6 +124,7 @@ class LanguageAdapter(Protocol):
     """
 
     code: str
+    segmentation: SegmentationSpec
 
     def detect(self, text: str) -> float:
         """how much of this text looks like my language. 0 to 1."""
@@ -90,6 +155,14 @@ class LanguageAdapter(Protocol):
         """latin spellings someone might plausibly write. more than one
         because محمد is Mohammed and Muhammad and Mohamed and they are all
         the same guy."""
+        ...
+
+    def segment_sentences(self, text: str) -> list[TextSpan]:
+        """return original-text sentence spans using this adapter's rules."""
+        ...
+
+    def segment_paragraphs(self, text: str) -> list[TextSpan]:
+        """return only paragraphs explicitly present in the original text."""
         ...
 
 

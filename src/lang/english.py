@@ -16,7 +16,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from src.lang.base import AlignedText
+from src.lang.base import AlignedText, SegmentationSpec, TextSpan
+from src.lang.segmentation import segment_explicit_paragraphs, segment_sentences
 
 _PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 _SPACES = re.compile(r"\s+")
@@ -26,9 +27,33 @@ _LATIN = re.compile(r"[A-Za-z]")
 # same idea with ال but as a prefix instead of separate words.
 _NAME_NOISE = {"the", "of", "al", "el", "bin", "ibn", "van", "von", "de", "da"}
 
+_ENGLISH_SENTENCE_MARKS = frozenset(".!?…")
+_ENGLISH_ABBREVIATIONS = frozenset(
+    {
+        "dr",
+        "fig",
+        "inc",
+        "jr",
+        "ltd",
+        "mr",
+        "mrs",
+        "ms",
+        "no",
+        "prof",
+        "sr",
+        "st",
+        "vs",
+        "etc",
+        "e.g",
+        "i.e",
+    }
+)
+_INITIALISM = re.compile(r"(?:[A-Za-z]\.)+[A-Za-z]$")
+
 
 class EnglishAdapter:
     code = "en"
+    segmentation = SegmentationSpec(name="english_rule_segmenter", version="1.0.0")
 
     def detect(self, text: str) -> float:
         letters = [ch for ch in text if ch.isalpha()]
@@ -109,3 +134,55 @@ class EnglishAdapter:
         """
         normalized = self.normalize(text)
         return [normalized] if normalized else []
+
+    def segment_sentences(self, text: str) -> list[TextSpan]:
+        """return exact original-text sentences using English punctuation."""
+        return segment_sentences(
+            text,
+            terminal_marks=_ENGLISH_SENTENCE_MARKS,
+            is_terminal=_is_english_sentence_terminal,
+        )
+
+    def segment_paragraphs(self, text: str) -> list[TextSpan]:
+        """return only blank-line paragraphs already present in the source."""
+        return segment_explicit_paragraphs(text)
+
+
+def _is_english_sentence_terminal(text: str, index: int) -> bool:
+    """recognize a terminal mark while keeping common abbreviations intact."""
+    char = text[index]
+    if char in {"!", "?", "…"}:
+        return True
+    if char != ".":
+        return False
+
+    if index + 1 < len(text) and text[index + 1] == ".":
+        return True
+    if index > 0 and text[index - 1] == ".":
+        return False
+    if _is_decimal_point(text, index):
+        return False
+    # ``example.com`` and ``U.S.`` must not break at the internal dot.
+    if index + 1 < len(text) and text[index + 1].isalnum():
+        return False
+
+    previous = _previous_token(text, index)
+    if previous.lower() in _ENGLISH_ABBREVIATIONS:
+        return False
+    return _INITIALISM.fullmatch(previous) is None
+
+
+def _is_decimal_point(text: str, index: int) -> bool:
+    return (
+        index > 0
+        and index + 1 < len(text)
+        and text[index - 1].isdigit()
+        and text[index + 1].isdigit()
+    )
+
+
+def _previous_token(text: str, index: int) -> str:
+    start = index
+    while start > 0 and not text[start - 1].isspace():
+        start -= 1
+    return text[start:index]
