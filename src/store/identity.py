@@ -21,7 +21,7 @@ import re
 import uuid
 from typing import Iterable, Mapping
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from src.store.blob import BlobStore, sha256_text
@@ -41,6 +41,7 @@ from src.store.orm import (
 DOCUMENT_IDENTITY_VERSION = "1"
 EVIDENCE_IDENTITY_VERSION = "1"
 MENTION_EVIDENCE_MAPPER_VERSION = "1"
+_ADOPTION_PAGE_SIZE = 500
 
 # Kept constant so a resumed backfill assigns the same UID to an old row. New
 # documents receive uuid4 values at write time and never consult this namespace.
@@ -612,6 +613,25 @@ class _IdentityAdoptionPlan:
     decision_ids: tuple[int, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedAdoptionMention:
+    """One current raw mention matched to a source-validated plan input.
+
+    The planner deliberately holds detached scalar values while it reads slow
+    source blobs.  The writer reloads these ORM rows in bounded queries before
+    it changes anything, then uses this small record to keep each evidence
+    signature explicit without re-querying the database for every mention.
+    """
+
+    item: _AdoptionMentionInput
+    document: DocumentORM
+    mention: MentionORM
+    document_identity: DocumentIdentityORM
+    source_text_sha256: str
+    language: str
+    fingerprint: str
+
+
 def plan_identity_adoption(
     session: Session,
     *,
@@ -668,37 +688,12 @@ def apply_identity_adoption(
     if not plan.report.ready:
         raise IdentityAdoptionError(plan.report)
 
-    for document_id in plan.document_ids:
-        document = session.get(DocumentORM, document_id)
-        if document is None:
-            raise IdentityInvariantError(f"document {document_id} disappeared during adoption")
-        ensure_document_identity(
-            session,
-            document,
-            document_uid=legacy_document_uid(document_id),
-        )
+    _write_identity_adoption_plan(session, plan)
 
-    for item in plan.mention_inputs:
-        document = session.get(DocumentORM, item.document_id)
-        mention = session.get(MentionORM, item.mention_id)
-        if document is None or mention is None:
-            raise IdentityInvariantError(
-                f"mention {item.mention_id} or document {item.document_id} disappeared during adoption"
-            )
-        ensure_mention_evidence_identity(
-            session,
-            document=document,
-            mention=mention,
-            language=item.language,
-            source_text_sha256=item.source_text_sha256,
-        )
-
-    for decision_id in plan.decision_ids:
-        decision = session.get(ResolutionDecisionORM, decision_id)
-        if decision is None:
-            raise IdentityInvariantError(f"decision {decision_id} disappeared during adoption")
-        record_resolution_constraint(session, decision)
-
+    # Keep a second full source/span validation inside the caller's one
+    # transaction.  The bulk writer below changes only how rows are loaded
+    # and flushed; it does not turn a successful audit into permission to
+    # trust stale source facts.
     session.flush()
     after = _plan_identity_adoption(
         session,
@@ -725,6 +720,527 @@ def apply_identity_adoption(
             "resolution_constraints": plan.report.constraints_missing,
         },
     )
+
+
+def _write_identity_adoption_plan(session: Session, plan: _IdentityAdoptionPlan) -> None:
+    """Materialize a ready adoption plan without per-row database round trips.
+
+    ``apply_identity_adoption`` is called by the CLI inside ``session.begin()``.
+    This helper uses normal session-bound SQL statements rather than a
+    fast-but-detached bulk API: a cancelled or failed run still rolls back
+    document identities, evidence, mappings, and provenance together.  There
+    are only a few dependency barriers:
+
+    1. document identities are inserted, then fetched once before evidence
+       references them;
+    2. evidence is inserted, then fetched once before mappings/provenance
+       reference it; and
+    3. a superseding constraint may need its new predecessor's ID.
+
+    The common 7,854-mapping production case has no legacy decisions, so it
+    performs bounded multi-row inserts, rather than flushing once per
+    mention.
+    """
+
+    document_ids_for_mentions = _ordered_unique(
+        item.document_id for item in plan.mention_inputs
+    )
+    document_ids_to_load = _ordered_unique(
+        (*plan.document_ids, *document_ids_for_mentions)
+    )
+    documents_by_id = _rows_by_id(
+        session,
+        DocumentORM,
+        DocumentORM.id,
+        document_ids_to_load,
+    )
+
+    # Preserve the original writer's first phase and its deterministic
+    # UUID5 adoption rule.  Existing, concurrently-created identities are
+    # accepted only when they have that same durable value.
+    document_identities_by_document_id = {
+        row.document_id: row
+        for row in _rows_for_values(
+            session,
+            DocumentIdentityORM,
+            DocumentIdentityORM.document_id,
+            document_ids_to_load,
+        )
+    }
+    new_document_identity_rows: list[dict[str, object]] = []
+    new_document_identity_ids: list[int] = []
+    for document_id in plan.document_ids:
+        document = documents_by_id.get(document_id)
+        if document is None:
+            raise IdentityInvariantError(f"document {document_id} disappeared during adoption")
+        expected_uid = legacy_document_uid(document_id)
+        existing = document_identities_by_document_id.get(document_id)
+        if existing is not None:
+            if existing.document_uid != expected_uid:
+                raise IdentityInvariantError(
+                    f"document {document_id} already has UID {existing.document_uid}, "
+                    f"not {expected_uid}"
+                )
+            continue
+        new_document_identity_rows.append(
+            {
+                "document_id": document_id,
+                "document_uid": expected_uid,
+                "identity_version": DOCUMENT_IDENTITY_VERSION,
+            }
+        )
+        new_document_identity_ids.append(document_id)
+
+    if new_document_identity_rows:
+        _insert_adoption_rows(
+            session,
+            DocumentIdentityORM,
+            new_document_identity_rows,
+        )
+        document_identities_by_document_id.update(
+            {
+                row.document_id: row
+                for row in _rows_for_values(
+                    session,
+                    DocumentIdentityORM,
+                    DocumentIdentityORM.document_id,
+                    tuple(new_document_identity_ids),
+                )
+            }
+        )
+
+    # A document identity normally appears either in the original plan or in
+    # the table above.  This narrow fallback preserves the sanctioned writer's
+    # behavior if another actor removed an identity after planning; it is not
+    # on the normal bulk path and cannot turn into an N+1 query loop.
+    for document_id in document_ids_for_mentions:
+        if document_id in document_identities_by_document_id:
+            continue
+        document = documents_by_id.get(document_id)
+        if document is None:
+            continue
+        document_identities_by_document_id[document_id] = ensure_document_identity(
+            session,
+            document,
+        )
+
+    planned_mention_ids = _ordered_unique(item.mention_id for item in plan.mention_inputs)
+    mentions_by_id = _rows_by_id(
+        session,
+        MentionORM,
+        MentionORM.id,
+        planned_mention_ids,
+    )
+    prepared_mentions: list[_PreparedAdoptionMention] = []
+    for item in plan.mention_inputs:
+        document = documents_by_id.get(item.document_id)
+        mention = mentions_by_id.get(item.mention_id)
+        if document is None or mention is None:
+            raise IdentityInvariantError(
+                f"mention {item.mention_id} or document {item.document_id} disappeared during adoption"
+            )
+        if mention.document_id != document.id:
+            raise IdentityInvariantError(
+                f"mention {mention.id} belongs to document {mention.document_id}, not {document.id}"
+            )
+        document_identity = document_identities_by_document_id.get(document.id)
+        if document_identity is None:
+            # The fallback above covers all normal paths.  Keep the old
+            # sanctioned behavior for this impossible-without-a-race state.
+            document_identity = ensure_document_identity(session, document)
+            document_identities_by_document_id[document.id] = document_identity
+        source_text_sha256 = _canonical_sha256(item.source_text_sha256)
+        language = canonical_language(item.language)
+        prepared_mentions.append(
+            _PreparedAdoptionMention(
+                item=item,
+                document=document,
+                mention=mention,
+                document_identity=document_identity,
+                source_text_sha256=source_text_sha256,
+                language=language,
+                fingerprint=evidence_fingerprint(
+                    document_uid=document_identity.document_uid,
+                    source_text_sha256=source_text_sha256,
+                    start_offset=mention.start_offset,
+                    end_offset=mention.end_offset,
+                    object_type=mention.object_type,
+                    language=language,
+                ),
+            )
+        )
+
+    # Read all decision rows and their endpoints before adding mappings.  The
+    # validation/exception order is still controlled by the writing phases
+    # below; these are only bounded prefetches.
+    decisions_by_id = _rows_by_id(
+        session,
+        ResolutionDecisionORM,
+        ResolutionDecisionORM.id,
+        plan.decision_ids,
+    )
+    decision_endpoint_mention_ids = _ordered_unique(
+        mention_id
+        for decision in decisions_by_id.values()
+        for mention_id in (decision.left_mention_id, decision.right_mention_id)
+    )
+    all_mapping_mention_ids = _ordered_unique(
+        (*planned_mention_ids, *decision_endpoint_mention_ids)
+    )
+    if decision_endpoint_mention_ids:
+        mentions_by_id.update(
+            _rows_by_id(
+                session,
+                MentionORM,
+                MentionORM.id,
+                decision_endpoint_mention_ids,
+            )
+        )
+
+    mappings_by_mention_id = {
+        row.mention_id: row
+        for row in _rows_for_values(
+            session,
+            MentionEvidenceIdentityORM,
+            MentionEvidenceIdentityORM.mention_id,
+            all_mapping_mention_ids,
+        )
+    }
+    existing_evidence_ids = _ordered_unique(
+        mapping.evidence_identity_id for mapping in mappings_by_mention_id.values()
+    )
+    evidence_by_id = _rows_by_id(
+        session,
+        EvidenceIdentityORM,
+        EvidenceIdentityORM.id,
+        existing_evidence_ids,
+    )
+    evidence_by_fingerprint = {
+        row.fingerprint: row for row in evidence_by_id.values()
+    }
+    expected_fingerprints = _ordered_unique(
+        prepared.fingerprint for prepared in prepared_mentions
+    )
+    for evidence in _rows_for_values(
+        session,
+        EvidenceIdentityORM,
+        EvidenceIdentityORM.fingerprint,
+        expected_fingerprints,
+    ):
+        evidence_by_id[evidence.id] = evidence
+        evidence_by_fingerprint[evidence.fingerprint] = evidence
+
+    # A decision may supersede either an already-adopted constraint or a
+    # predecessor that this plan creates earlier in append order.  Prefetch
+    # both kinds so no decision uses scalar queries in its write loop.
+    constraint_source_decision_ids = _ordered_unique(
+        (
+            *plan.decision_ids,
+            *(
+                decision.supersedes_id
+                for decision in decisions_by_id.values()
+                if decision.supersedes_id is not None
+            ),
+        )
+    )
+    constraints_by_source_decision_id = {
+        row.source_decision_id: row
+        for row in _rows_for_values(
+            session,
+            ResolutionConstraintORM,
+            ResolutionConstraintORM.source_decision_id,
+            constraint_source_decision_ids,
+        )
+    }
+
+    # Recreate the normal writer's evidence assertions before adding a single
+    # mapping.  Reused evidence is still checked against the current raw row;
+    # only the database loading and flush cadence have changed.
+    evidence_by_mention_id: dict[int, EvidenceIdentityORM] = {}
+    prepared_needing_mapping: list[_PreparedAdoptionMention] = []
+    new_evidence: list[EvidenceIdentityORM] = []
+    for prepared in prepared_mentions:
+        mapping = mappings_by_mention_id.get(prepared.mention.id)
+        if mapping is not None:
+            evidence = evidence_by_id.get(mapping.evidence_identity_id)
+            if evidence is None:
+                raise IdentityInvariantError(
+                    f"mention {prepared.mention.id} maps to missing evidence "
+                    f"{mapping.evidence_identity_id}"
+                )
+            _assert_evidence_matches(
+                evidence,
+                document_identity=prepared.document_identity,
+                fingerprint=prepared.fingerprint,
+                source_text_sha256=prepared.source_text_sha256,
+                mention=prepared.mention,
+                language=prepared.language,
+            )
+            continue
+
+        evidence = evidence_by_fingerprint.get(prepared.fingerprint)
+        if evidence is None:
+            evidence = EvidenceIdentityORM(
+                document_identity_id=prepared.document_identity.id,
+                fingerprint=prepared.fingerprint,
+                identity_version=EVIDENCE_IDENTITY_VERSION,
+                source_text_sha256=prepared.source_text_sha256,
+                start_offset=prepared.mention.start_offset,
+                end_offset=prepared.mention.end_offset,
+                object_type=prepared.mention.object_type,
+                language=prepared.language,
+            )
+            new_evidence.append(evidence)
+            evidence_by_fingerprint[evidence.fingerprint] = evidence
+        else:
+            _assert_evidence_matches(
+                evidence,
+                document_identity=prepared.document_identity,
+                fingerprint=prepared.fingerprint,
+                source_text_sha256=prepared.source_text_sha256,
+                mention=prepared.mention,
+                language=prepared.language,
+            )
+        prepared_needing_mapping.append(prepared)
+
+    if new_evidence:
+        _insert_adoption_rows(
+            session,
+            EvidenceIdentityORM,
+            [
+                {
+                    "document_identity_id": evidence.document_identity_id,
+                    "fingerprint": evidence.fingerprint,
+                    "identity_version": evidence.identity_version,
+                    "source_text_sha256": evidence.source_text_sha256,
+                    "start_offset": evidence.start_offset,
+                    "end_offset": evidence.end_offset,
+                    "object_type": evidence.object_type,
+                    "language": evidence.language,
+                }
+                for evidence in new_evidence
+            ],
+        )
+        for evidence in _rows_for_values(
+            session,
+            EvidenceIdentityORM,
+            EvidenceIdentityORM.fingerprint,
+            _ordered_unique(evidence.fingerprint for evidence in new_evidence),
+        ):
+            evidence_by_id[evidence.id] = evidence
+            evidence_by_fingerprint[evidence.fingerprint] = evidence
+
+    for prepared in prepared_mentions:
+        evidence_by_mention_id[prepared.mention.id] = evidence_by_fingerprint[
+            prepared.fingerprint
+        ]
+
+    # These rows carry no generated IDs that the remainder of this writer
+    # needs, so execute them in bounded multi-row statements rather than
+    # creating thousands of pending ORM objects for one flush to sort.
+    _insert_adoption_rows(
+        session,
+        MentionEvidenceIdentityORM,
+        [
+            {
+                "mention_id": prepared.mention.id,
+                "evidence_identity_id": evidence_by_mention_id[prepared.mention.id].id,
+                "mapper_version": MENTION_EVIDENCE_MAPPER_VERSION,
+            }
+            for prepared in prepared_needing_mapping
+        ],
+    )
+    _insert_adoption_rows(
+        session,
+        ProvenanceORM,
+        [
+            {
+                "target_table": "evidence_identities",
+                "target_id": evidence_by_mention_id[prepared.mention.id].id,
+                "document_id": prepared.document.id,
+                "mention_id": prepared.mention.id,
+                "extractor_version_id": prepared.mention.extractor_version_id,
+            }
+            for prepared in prepared_needing_mapping
+        ],
+    )
+
+    def evidence_for_mention(mention_id: int) -> EvidenceIdentityORM:
+        prepared_evidence = evidence_by_mention_id.get(mention_id)
+        if prepared_evidence is not None:
+            return prepared_evidence
+        mapping = mappings_by_mention_id.get(mention_id)
+        if mapping is None:
+            raise IdentityInvariantError(
+                f"mention {mention_id} has no durable evidence mapping; "
+                "run identity adoption first"
+            )
+        evidence = evidence_by_id.get(mapping.evidence_identity_id)
+        if evidence is None:
+            raise IdentityInvariantError(
+                f"mention {mention_id} maps to missing evidence "
+                f"{mapping.evidence_identity_id}"
+            )
+        return evidence
+
+    # Constraint rows must be appended in decision order.  In the unusual
+    # case where a newly-created decision supersedes another new decision,
+    # flush just that predecessor batch to obtain its ID before inserting the
+    # child.  Independent decisions remain batched together.
+    pending_constraints: dict[int, ResolutionConstraintORM] = {}
+    new_constraint_provenance: list[
+        tuple[ResolutionConstraintORM, MentionORM, MentionORM, ResolutionDecisionORM]
+    ] = []
+
+    def flush_pending_constraints() -> None:
+        if not pending_constraints:
+            return
+        session.flush()
+        constraints_by_source_decision_id.update(pending_constraints)
+        pending_constraints.clear()
+
+    for decision_id in plan.decision_ids:
+        decision = decisions_by_id.get(decision_id)
+        if decision is None:
+            raise IdentityInvariantError(f"decision {decision_id} disappeared during adoption")
+        if decision_id in constraints_by_source_decision_id:
+            continue
+
+        left_evidence = evidence_for_mention(decision.left_mention_id)
+        right_evidence = evidence_for_mention(decision.right_mention_id)
+        endpoints = sorted(
+            (left_evidence, right_evidence), key=lambda row: (row.fingerprint, row.id)
+        )
+        supersedes_constraint_id: int | None = None
+        if decision.supersedes_id is not None:
+            predecessor = constraints_by_source_decision_id.get(decision.supersedes_id)
+            if predecessor is None and decision.supersedes_id in pending_constraints:
+                flush_pending_constraints()
+                predecessor = constraints_by_source_decision_id.get(decision.supersedes_id)
+            if predecessor is None:
+                raise IdentityInvariantError(
+                    f"decision {decision.id} supersedes {decision.supersedes_id}, but its "
+                    "durable constraint is missing; complete identity adoption first"
+                )
+            supersedes_constraint_id = predecessor.id
+
+        left_mention = mentions_by_id.get(decision.left_mention_id)
+        right_mention = mentions_by_id.get(decision.right_mention_id)
+        if left_mention is None:
+            raise IdentityInvariantError(
+                f"resolution decision {decision.id} references missing mention "
+                f"{decision.left_mention_id}"
+            )
+        if right_mention is None:
+            raise IdentityInvariantError(
+                f"resolution decision {decision.id} references missing mention "
+                f"{decision.right_mention_id}"
+            )
+
+        constraint = ResolutionConstraintORM(
+            source_decision_id=decision.id,
+            left_evidence_identity_id=endpoints[0].id,
+            right_evidence_identity_id=endpoints[1].id,
+            decision=decision.decision,
+            supersedes_constraint_id=supersedes_constraint_id,
+        )
+        session.add(constraint)
+        pending_constraints[decision.id] = constraint
+        new_constraint_provenance.append(
+            (constraint, left_mention, right_mention, decision)
+        )
+
+    flush_pending_constraints()
+
+    for constraint, left_mention, right_mention, decision in new_constraint_provenance:
+        session.add_all(
+            [
+                ProvenanceORM(
+                    target_table="resolution_constraints",
+                    target_id=constraint.id,
+                    document_id=left_mention.document_id,
+                    mention_id=left_mention.id,
+                    extractor_version_id=decision.extractor_version_id,
+                ),
+                ProvenanceORM(
+                    target_table="resolution_constraints",
+                    target_id=constraint.id,
+                    document_id=right_mention.document_id,
+                    mention_id=right_mention.id,
+                    extractor_version_id=decision.extractor_version_id,
+                ),
+            ]
+        )
+
+    # This flush is only for ORM-managed constraint provenance.  The
+    # high-cardinality document/evidence/mapping rows above already used
+    # bounded INSERT statements.  The caller's enclosing transaction makes
+    # every preceding barrier all-or-nothing.
+    session.flush()
+
+
+def _ordered_unique(values: Iterable[int]) -> tuple[int, ...]:
+    """Return integer IDs once, preserving the planner's deterministic order."""
+
+    return tuple(dict.fromkeys(values))
+
+
+def _rows_for_values(
+    session: Session,
+    model: type[object],
+    column: object,
+    values: tuple[int, ...] | tuple[str, ...],
+) -> list[object]:
+    """Load a bounded set of ORM rows without an empty ``IN`` query.
+
+    This deliberately tiny helper keeps the batching visible at each call
+    site.  Production's 7,854 mappings exceed conservative SQLite bind-value
+    limits, so each page stays safely below 999 while still avoiding an N+1
+    query loop.
+    """
+
+    if not values:
+        return []
+    rows: list[object] = []
+    for start in range(0, len(values), _ADOPTION_PAGE_SIZE):
+        page = values[start : start + _ADOPTION_PAGE_SIZE]
+        rows.extend(
+            session.scalars(select(model).where(column.in_(page)))  # type: ignore[attr-defined,arg-type]
+        )
+    return rows
+
+
+def _rows_by_id(
+    session: Session,
+    model: type[object],
+    column: object,
+    values: tuple[int, ...],
+) -> dict[int, object]:
+    """Index a bounded row fetch by its integer primary key."""
+
+    return {
+        row.id: row  # type: ignore[attr-defined]
+        for row in _rows_for_values(session, model, column, values)
+    }
+
+
+def _insert_adoption_rows(
+    session: Session,
+    model: type[object],
+    rows: list[dict[str, object]],
+) -> None:
+    """Insert high-cardinality adoption rows in bounded SQL statements.
+
+    A 500-row page is deliberately boring: it is far below Postgres's
+    parameter limit even for the widest provenance rows, works in the SQLite
+    disposable-schema tests, and prevents a one-row ORM flush from becoming a
+    multi-minute network loop.  ``session.execute`` still uses the caller's
+    transaction; it does not commit or bypass rollback semantics.
+    """
+
+    for start in range(0, len(rows), _ADOPTION_PAGE_SIZE):
+        page = rows[start : start + _ADOPTION_PAGE_SIZE]
+        session.execute(insert(model).values(page))  # type: ignore[arg-type]
 
 
 def _plan_identity_adoption(

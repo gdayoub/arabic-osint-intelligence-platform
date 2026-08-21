@@ -8,7 +8,7 @@ from pathlib import Path
 
 from alembic import command
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 
 from scripts import adopt_m42_identity
@@ -227,6 +227,198 @@ def test_adoption_keeps_a_preexisting_new_document_uid_when_only_mapping_is_miss
         )
     ) == original_uid
     assert session.get(MentionEvidenceIdentityORM, raw_legacy_mention.id) is not None
+
+
+def test_apply_batches_a_legacy_constraint_supersession_in_append_order(
+    session, blob_store
+):
+    """A child constraint waits only for its new predecessor's ID barrier."""
+
+    first_document_id, second_document_id = _seed_legacy_rows(session.get_bind())
+    with Session(session.get_bind()) as legacy_session:
+        extractor = legacy_session.scalar(
+            select(ExtractorVersionORM).where(
+                ExtractorVersionORM.name == "legacy_gazetteer"
+            )
+        )
+        first_mention = legacy_session.scalar(
+            select(MentionORM).where(MentionORM.document_id == first_document_id)
+        )
+        second_mention = legacy_session.scalar(
+            select(MentionORM).where(MentionORM.document_id == second_document_id)
+        )
+        first_decision = legacy_session.scalar(
+            select(ResolutionDecisionORM).order_by(ResolutionDecisionORM.id)
+        )
+        replacement = ResolutionDecisionORM(
+            left_mention_id=first_mention.id,
+            right_mention_id=second_mention.id,
+            decision="different",
+            source="legacy-review",
+            reviewer="legacy-analyst",
+            extractor_version_id=extractor.id,
+            supersedes_id=first_decision.id,
+        )
+        legacy_session.add(replacement)
+        legacy_session.commit()
+
+    with session.begin():
+        report = apply_identity_adoption(
+            session,
+            blob_store=blob_store,
+            extractor_languages={"legacy_gazetteer": "ar"},
+        )
+
+    assert report.ready is True
+    constraints = list(
+        session.scalars(
+            select(ResolutionConstraintORM).order_by(ResolutionConstraintORM.source_decision_id)
+        )
+    )
+    assert len(constraints) == 2
+    assert constraints[1].supersedes_constraint_id == constraints[0].id
+
+
+def test_apply_batches_large_legacy_writes_and_keeps_the_final_plan_check(
+    session, blob_store, monkeypatch
+):
+    """Large adoptions use bounded fetches, not one database round trip per row.
+
+    The production recovery has thousands of mappings.  This deliberately
+    creates more than a thousand distinct legacy mentions, then observes the
+    whole apply call (including its required final relational re-check).
+    A per-mention ``session.get``/``flush`` loop would issue thousands of
+    SELECTs here; the batched writer stays below a small fixed ceiling.
+    """
+
+    extractor = ExtractorVersionORM(name="legacy_bulk", version="0.9.0")
+    session.add(extractor)
+    session.flush()
+
+    document_ids: list[int] = []
+    mentions: list[MentionORM] = []
+    for document_number in range(12):
+        mention_texts = [
+            f"legacy-{document_number:02d}-{mention_number:03d}"
+            for mention_number in range(100)
+        ]
+        text = " ".join(mention_texts)
+        document = DocumentORM(
+            source="legacy-bulk",
+            text=text,
+            content_hash=f"legacy-bulk-{document_number}",
+        )
+        session.add(document)
+        session.flush()
+        document_ids.append(document.id)
+        for mention_text in mention_texts:
+            start = text.index(mention_text)
+            mentions.append(
+                MentionORM(
+                    document_id=document.id,
+                    text=mention_text,
+                    start_offset=start,
+                    end_offset=start + len(mention_text),
+                    object_type="person",
+                    extractor_version_id=extractor.id,
+                )
+            )
+    session.add_all(mentions)
+    session.commit()
+
+    source_reads: list[int] = []
+    original_resolve = identity.resolve_document_text
+
+    def count_source_reads(document, store):  # noqa: ANN001
+        source_reads.append(document.id)
+        return original_resolve(document, store)
+
+    monkeypatch.setattr(identity, "resolve_document_text", count_source_reads)
+
+    statements: list[str] = []
+    select_statements: list[str] = []
+    select_bind_counts: list[int] = []
+    engine = session.get_bind()
+
+    def count_selects(  # noqa: ANN001
+        _connection, _cursor, statement, _parameters, _context, _executemany
+    ):
+        statements.append(statement)
+        if statement.lstrip().upper().startswith("SELECT"):
+            select_statements.append(statement)
+            if isinstance(_parameters, (list, tuple)):
+                select_bind_counts.append(len(_parameters))
+
+    event.listen(engine, "before_cursor_execute", count_selects)
+    try:
+        with session.begin():
+            report = apply_identity_adoption(
+                session,
+                blob_store=blob_store,
+                extractor_languages={"legacy_bulk": "en"},
+            )
+    finally:
+        event.remove(engine, "before_cursor_execute", count_selects)
+
+    assert report.ready is True
+    assert report.applied == {
+        "document_identities": 12,
+        "mention_mappings": 1200,
+        "resolution_constraints": 0,
+    }
+    # The existing final planner only source-validates unmapped mentions.  By
+    # then this successful apply has mapped all rows, so it performs its full
+    # relational snapshot/reconciliation without a second needless blob read.
+    assert source_reads == document_ids
+    # Both planner snapshots and the final reconciliation query their complete
+    # relational state.  The fixed ceilings leave room for those checks and
+    # the three 500-row INSERT pages per high-cardinality table, while making
+    # an accidental per-mention writer query/insert (1,200+) impossible to
+    # hide.  The SELECT pages also remain compatible with conservative SQLite
+    # bind-variable limits rather than assuming the local build's larger cap.
+    assert len(select_statements) < 60
+    assert len(statements) < 70
+    assert max(select_bind_counts) <= 500
+
+    assert session.scalar(select(func.count()).select_from(DocumentIdentityORM)) == 12
+    assert session.scalar(select(func.count()).select_from(EvidenceIdentityORM)) == 1200
+    assert session.scalar(select(func.count()).select_from(MentionEvidenceIdentityORM)) == 1200
+
+
+def test_apply_rolls_back_batched_rows_when_a_late_mapping_write_fails(session, blob_store):
+    """The caller's one transaction rolls back identities and evidence together."""
+
+    first_document_id, second_document_id = _seed_legacy_rows(session.get_bind())
+    session.commit()
+    engine = session.get_bind()
+
+    def fail_mapping_insert(  # noqa: ANN001
+        _connection, _cursor, statement, _parameters, _context, _executemany
+    ):
+        if "INSERT INTO mention_evidence_identities" in statement:
+            raise RuntimeError("forced mapping failure")
+
+    event.listen(engine, "before_cursor_execute", fail_mapping_insert)
+    try:
+        with pytest.raises(RuntimeError, match="forced mapping failure"):
+            with session.begin():
+                apply_identity_adoption(
+                    session,
+                    blob_store=blob_store,
+                    extractor_languages={"legacy_gazetteer": "ar"},
+                )
+    finally:
+        event.remove(engine, "before_cursor_execute", fail_mapping_insert)
+
+    # The failure happens after document/evidence rows have already crossed
+    # their ID-assignment flush barriers.  A single surrounding transaction is
+    # therefore essential: it must leave every durable table untouched.
+    assert first_document_id > 0
+    assert second_document_id > 0
+    assert session.scalar(select(func.count()).select_from(DocumentIdentityORM)) == 0
+    assert session.scalar(select(func.count()).select_from(EvidenceIdentityORM)) == 0
+    assert session.scalar(select(func.count()).select_from(MentionEvidenceIdentityORM)) == 0
+    assert session.scalar(select(func.count()).select_from(ResolutionConstraintORM)) == 0
 
 
 def test_read_only_plan_resolves_each_document_once_and_keeps_unsafe_span_rows(
