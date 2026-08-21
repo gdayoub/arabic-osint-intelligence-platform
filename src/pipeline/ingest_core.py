@@ -135,6 +135,7 @@ def _source_result(
     inserted_count: int,
     skipped_existing_count: int,
     reason: PipelineReasonCode | None,
+    fatal_error_count: int = 0,
 ) -> dict[str, Any]:
     """Build the public-safe per-source ingestion result.
 
@@ -171,7 +172,11 @@ def _source_result(
         "parsing_failure_count": parsing_failed,
         "fetch_failure_count": listing_failed + article_fetch_failed,
         "error_count": (
-            listing_failed + article_fetch_failed + selector_failed + parsing_failed
+            listing_failed
+            + article_fetch_failed
+            + selector_failed
+            + parsing_failed
+            + fatal_error_count
         ),
         "latest_successful_article_at": _latest_publication_time(
             scrape_stats.get("latest_successful_article_at")
@@ -249,64 +254,102 @@ def run_core_ingestion(
     scrapers = build_scrapers()
 
     stats = IngestCoreStats()
-    with get_core_session() as session:
-        for scraper in scrapers:
-            # The callbacks are deliberately optional and receive only the
-            # already-safe source alias/result.  Runtime orchestration uses
-            # them to place source ledger boundaries around the individual
-            # scraper rather than around this whole batch.  No exception or
-            # page data crosses this boundary.
-            if on_source_started is not None:
-                on_source_started(scraper.source_name)
-            extractor_version = register_extractor_version(session, scraper.NAME, scraper.VERSION)
+    for scraper in scrapers:
+        # The callbacks are deliberately optional and receive only the
+        # already-safe source alias/result. Runtime orchestration uses them
+        # to place source ledger boundaries around each scraper. The terminal
+        # callback is deliberately after this source's database transaction
+        # commits: an event must never say a source succeeded while its rows
+        # can still roll back with a later source.
+        if on_source_started is not None:
+            on_source_started(scraper.source_name)
+
+        articles = []
+        scrape_stats: dict[str, Any] = {}
+        source_attempted = 0
+        source_result: dict[str, Any]
+
+        try:
+            articles = scraper.scrape(limit=limit)
+            scrape_stats = scraper.get_last_scrape_stats()
+            logger.info(
+                "Source %s returned %d articles", scraper.source_name, len(articles)
+            )
+        except Exception:
+            # Detailed exceptions stay in the private job log. The returned
+            # result is deliberately limited to a closed code.
+            logger.exception("Source scrape failed for %s", scraper.source_name)
+            try:
+                scrape_stats = scraper.get_last_scrape_stats()
+            except Exception:
+                scrape_stats = {}
+            source_result = _source_result(
+                scrape_stats=scrape_stats,
+                yielded_count=len(articles),
+                inserted_count=0,
+                skipped_existing_count=0,
+                reason=PipelineReasonCode.UNEXPECTED_ERROR,
+                fatal_error_count=1,
+            )
+        else:
             source_inserted = 0
             source_skipped = 0
-            articles = []
-            scrape_stats: dict[str, Any] = {}
             try:
-                articles = scraper.scrape(limit=limit)
-                scrape_stats = scraper.get_last_scrape_stats()
-                logger.info("Source %s returned %d articles", scraper.source_name, len(articles))
-
-                for article in articles:
-                    stats.attempted += 1
-                    _, was_new = ingest_article(session, article.to_dict(), blob_store, extractor_version, ontology)
-                    if was_new:
-                        stats.inserted += 1
-                        source_inserted += 1
-                    else:
-                        stats.skipped_existing += 1
-                        source_skipped += 1
-
+                # A committed source is the smallest truthful terminal unit:
+                # later sources can fail without undoing earlier successful
+                # source telemetry, and a commit failure reports zero rows.
+                with get_core_session() as session:
+                    extractor_version = register_extractor_version(
+                        session, scraper.NAME, scraper.VERSION
+                    )
+                    for article in articles:
+                        source_attempted += 1
+                        _, was_new = ingest_article(
+                            session,
+                            article.to_dict(),
+                            blob_store,
+                            extractor_version,
+                            ontology,
+                        )
+                        if was_new:
+                            source_inserted += 1
+                        else:
+                            source_skipped += 1
+            except Exception:
+                # The context manager has already rolled back this source.
+                # Do not carry local insert/skip counters into the aggregate
+                # result or source terminal summary; they were not committed.
+                logger.exception(
+                    "Source database write failed for %s", scraper.source_name
+                )
+                source_result = _source_result(
+                    scrape_stats=scrape_stats,
+                    yielded_count=len(articles),
+                    inserted_count=0,
+                    skipped_existing_count=0,
+                    reason=PipelineReasonCode.UNEXPECTED_ERROR,
+                    fatal_error_count=1,
+                )
+            else:
                 reason = _safe_scrape_reason(
                     scrape_stats.get("reason_code"), yielded_count=len(articles)
                 )
-                stats.sources[scraper.source_name] = _source_result(
+                source_result = _source_result(
                     scrape_stats=scrape_stats,
                     yielded_count=len(articles),
                     inserted_count=source_inserted,
                     skipped_existing_count=source_skipped,
                     reason=reason,
                 )
-            except Exception:
-                # Detailed exceptions stay in the private job log.  The
-                # returned result is deliberately limited to a closed code.
-                logger.exception("Source failure for %s", scraper.source_name)
-                try:
-                    scrape_stats = scraper.get_last_scrape_stats()
-                except Exception:
-                    scrape_stats = {}
-                stats.sources[scraper.source_name] = _source_result(
-                    scrape_stats=scrape_stats,
-                    yielded_count=len(articles),
-                    inserted_count=source_inserted,
-                    skipped_existing_count=source_skipped,
-                    reason=PipelineReasonCode.UNEXPECTED_ERROR,
-                )
-            if on_source_finished is not None:
-                on_source_finished(
-                    scraper.source_name,
-                    stats.sources[scraper.source_name],
-                )
+                # Count only database effects that committed. Attempts are
+                # observed separately below, even if an attempted write
+                # later failed and rolled back.
+                stats.inserted += source_inserted
+                stats.skipped_existing += source_skipped
+
+        stats.attempted += source_attempted
+        stats.sources[scraper.source_name] = source_result
+        if on_source_finished is not None:
+            on_source_finished(scraper.source_name, source_result)
 
     return stats

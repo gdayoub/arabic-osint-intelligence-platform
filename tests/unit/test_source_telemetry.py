@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
-from datetime import datetime, timezone
+from contextlib import contextmanager, nullcontext
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from src.config.settings import Settings
-from src.ops.events import PipelineReasonCode
+from src.ops.events import PipelineEventType, PipelineReasonCode
+from src.ops.ledger import abandon_expired_runs
+from src.ops.runtime import (
+    PipelineStage,
+    outcome_from_ingest_stats,
+    run_orchestrated_pipeline,
+)
 from src.pipeline import ingest_core
 from src.scraping.base_scraper import BaseScraper
 from src.scraping.scraper_utils import ArticleRecord
+from src.store.orm import DocumentORM, PipelineEventORM
 from src.store.provenance import register_extractor_version
 
 PUBLISHED_AT = datetime(2026, 8, 19, 12, 30, tzinfo=timezone.utc)
@@ -259,3 +271,213 @@ def test_ingestion_callbacks_receive_only_source_alias_and_safe_terminal_summary
     assert result["reason_code"] == PipelineReasonCode.SOURCE_PARSE_FAILED.value
     assert result["article_yield_count"] == 1
     assert SECRET_TEXT not in repr(finished)
+
+
+def test_source_terminal_callback_runs_only_after_its_rows_commit(
+    session, blob_store, monkeypatch
+):
+    scraper = _ReturnedArticleScraper(
+        _article("https://example.com/article/committed")
+    )
+    monkeypatch.setattr(ingest_core, "build_scrapers", lambda: [scraper])
+    callback_order: list[str] = []
+
+    @contextmanager
+    def committed_source_session():
+        try:
+            yield session
+            session.commit()
+            callback_order.append("committed")
+        except Exception:
+            session.rollback()
+            raise
+
+    monkeypatch.setattr(ingest_core, "get_core_session", committed_source_session)
+
+    def finished(_name: str, result: dict[str, object]) -> None:
+        callback_order.append("finished")
+        assert result["status"] == "success"
+        assert session.scalar(select(func.count()).select_from(DocumentORM)) == 1
+
+    stats = ingest_core.run_core_ingestion(
+        blob_store=blob_store,
+        on_source_finished=finished,
+    )
+
+    assert callback_order == ["committed", "finished"]
+    assert stats.inserted == 1
+    assert stats.sources[scraper.source_name]["inserted_count"] == 1
+
+
+def test_source_commit_failure_rolls_back_before_safe_terminal_and_continues(
+    session, blob_store, monkeypatch
+):
+    failed_scraper = _ReturnedArticleScraper(
+        _article("https://example.com/article/rolled-back")
+    )
+    failed_scraper.source_name = "Failed fixture source"
+    failed_scraper.NAME = "failed_fixture_scraper"
+    successful_scraper = _ReturnedArticleScraper(
+        _article("https://example.com/article/committed-after-failure")
+    )
+    successful_scraper.source_name = "Healthy fixture source"
+    successful_scraper.NAME = "healthy_fixture_scraper"
+    monkeypatch.setattr(
+        ingest_core,
+        "build_scrapers",
+        lambda: [failed_scraper, successful_scraper],
+    )
+
+    transaction_number = 0
+
+    @contextmanager
+    def source_session():
+        nonlocal transaction_number
+        current_transaction = transaction_number
+        transaction_number += 1
+        try:
+            yield session
+            if current_transaction == 0:
+                raise RuntimeError(SECRET_TEXT)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    monkeypatch.setattr(ingest_core, "get_core_session", source_session)
+    terminal_rows: list[tuple[str, dict[str, object]]] = []
+
+    def finished(name: str, result: dict[str, object]) -> None:
+        terminal_rows.append((name, dict(result)))
+        if name == failed_scraper.source_name:
+            assert session.scalar(select(func.count()).select_from(DocumentORM)) == 0
+
+    stats = ingest_core.run_core_ingestion(
+        blob_store=blob_store,
+        on_source_finished=finished,
+    )
+
+    failed = stats.sources[failed_scraper.source_name]
+    healthy = stats.sources[successful_scraper.source_name]
+    assert stats.attempted == 2
+    assert stats.inserted == 1
+    assert stats.skipped_existing == 0
+    assert failed["status"] == "failed"
+    assert failed["reason_code"] == PipelineReasonCode.UNEXPECTED_ERROR.value
+    assert failed["inserted_count"] == 0
+    assert failed["skipped_existing_count"] == 0
+    assert failed["error_count"] >= 1
+    assert healthy["status"] == "success"
+    assert healthy["inserted_count"] == 1
+    assert [name for name, _result in terminal_rows] == [
+        failed_scraper.source_name,
+        successful_scraper.source_name,
+    ]
+    assert SECRET_TEXT not in repr(terminal_rows)
+    assert session.scalar(select(func.count()).select_from(DocumentORM)) == 1
+
+
+def test_interrupted_runtime_never_records_uncommitted_source_success(
+    session, blob_store, monkeypatch
+):
+    """A crash after a terminal callback leaves only committed source success."""
+    scraper = _ReturnedArticleScraper(
+        _article("https://example.com/article/interrupted")
+    )
+    monkeypatch.setattr(ingest_core, "build_scrapers", lambda: [scraper])
+    engine = session.get_bind()
+
+    @contextmanager
+    def source_session():
+        write_session = Session(engine)
+        try:
+            yield write_session
+            write_session.commit()
+        except Exception:
+            write_session.rollback()
+            raise
+        finally:
+            write_session.close()
+
+    @contextmanager
+    def ledger_session():
+        write_session = Session(engine)
+        try:
+            yield write_session
+            write_session.commit()
+        except Exception:
+            write_session.rollback()
+            raise
+        finally:
+            write_session.close()
+
+    monkeypatch.setattr(ingest_core, "get_core_session", source_session)
+
+    def interrupted_stage(runtime):  # noqa: ANN001
+        def record_terminal(name: str, telemetry: dict[str, object]) -> None:
+            source_stats = SimpleNamespace(
+                attempted=0,
+                inserted=0,
+                sources={name: telemetry},
+            )
+            runtime.source_completed(outcome_from_ingest_stats(source_stats).sources[0])
+
+        ingest_core.run_core_ingestion(
+            blob_store=blob_store,
+            on_source_started=runtime.source_started,
+            on_source_finished=record_terminal,
+        )
+        # The source's transaction and terminal event completed above. This
+        # models a process death before the stage/run terminal events.
+        raise KeyboardInterrupt
+
+    fixed_now = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
+    run_id = "interrupted-committed-source"
+    with pytest.raises(KeyboardInterrupt):
+        run_orchestrated_pipeline(
+            (
+                PipelineStage(
+                    name="ingest",
+                    source_names=(scraper.source_name,),
+                    operation=interrupted_stage,
+                ),
+            ),
+            session_scope=ledger_session,
+            run_id=run_id,
+            commit_sha="0123456789abcdef",
+            clock=lambda: fixed_now,
+        )
+
+    with Session(engine) as query_session:
+        assert (
+            query_session.scalar(select(func.count()).select_from(DocumentORM))
+            == 1
+        )
+        event_types = list(
+            query_session.scalars(
+                select(PipelineEventORM.event_type)
+                .where(PipelineEventORM.run_id == run_id)
+                .order_by(PipelineEventORM.id.asc())
+            )
+        )
+        assert PipelineEventType.SOURCE_SUCCEEDED.value in event_types
+        assert PipelineEventType.RUN_SUCCEEDED.value not in event_types
+        assert PipelineEventType.RUN_FAILED.value not in event_types
+
+        abandoned = abandon_expired_runs(
+            query_session,
+            now=fixed_now + timedelta(hours=1),
+            monitor_commit_sha="0123456789abcdef",
+        )
+        query_session.commit()
+
+    assert len(abandoned) == 1
+    with Session(engine) as query_session:
+        terminal_types = list(
+            query_session.scalars(
+                select(PipelineEventORM.event_type)
+                .where(PipelineEventORM.run_id == run_id)
+                .order_by(PipelineEventORM.id.asc())
+            )
+        )
+    assert PipelineEventType.RUN_ABANDONED.value in terminal_types

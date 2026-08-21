@@ -48,6 +48,16 @@ They reject URLs and arbitrary diagnostics as source aliases and never write
 exception strings to the event stream.  Zero yielded articles remains distinct
 from positive yield with zero inserts.
 
+One scraper is also the smallest committed ingestion unit.  Its document and
+metadata writes use their own transaction, and the source terminal callback
+runs only after that transaction commits.  Local insert and duplicate counters
+move into the aggregate result only at that point.  If a database write or the
+commit itself fails, that source transaction rolls back, its closed failure
+summary reports zero committed inserts and skips, and later sources still run.
+This prevents a durable source-success event from outliving a rolled-back
+source write.  Parser and selector warnings remain degraded completions: the
+successfully parsed rows commit and retain their safe warning telemetry.
+
 An actual exception closes the current stage and run as failed with a safe
 reason.  A completed but failed source also closes its parent stage and run;
 a degraded source or non-source item error completes the stage but makes the
@@ -72,8 +82,10 @@ and its checks are green.
 
 ## Consequences
 
-- The normal pipeline remains behaviorally unchanged until an explicit future
-  activation; the code is testable now without writing production events.
+- The normal pipeline remains unchanged in orchestration and publication until
+  an explicit future activation; the only immediate ingestion change is that a
+  failed source database transaction no longer leaves partial rows to commit
+  with the rest of the batch.
 - Run health gets one authoritative event order rather than hand-coded stage
   bookkeeping in six domain modules.
 - Candidate creation is safe to demonstrate and inspect without accidentally
