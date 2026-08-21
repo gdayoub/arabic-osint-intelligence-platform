@@ -240,6 +240,50 @@ def test_source_summary_distinguishes_zero_inserted_from_zero_yield(session):  #
         )
 
 
+def test_completed_fetch_failure_can_be_a_zero_yield_source_warning(session):  # noqa: ANN001
+    _start_run(session, "run-fetch-warning")
+    append_pipeline_event(
+        session,
+        event_key="run-fetch-warning:ingest:started",
+        run_id="run-fetch-warning",
+        event_type="stage_started",
+        stage="ingest",
+        commit_sha="0123456789abcdef",
+        occurred_at=BASE_TIME + timedelta(seconds=1),
+    )
+    append_pipeline_event(
+        session,
+        event_key="run-fetch-warning:ingest:alarabiya:started",
+        run_id="run-fetch-warning",
+        event_type="source_started",
+        stage="ingest",
+        source="alarabiya",
+        commit_sha="0123456789abcdef",
+        occurred_at=BASE_TIME + timedelta(seconds=2),
+    )
+
+    terminal = append_pipeline_event(
+        session,
+        event_key="run-fetch-warning:ingest:alarabiya:succeeded",
+        run_id="run-fetch-warning",
+        event_type="source_succeeded",
+        stage="ingest",
+        source="alarabiya",
+        commit_sha="0123456789abcdef",
+        occurred_at=BASE_TIME + timedelta(seconds=3),
+        attempt_count=3,
+        output_count=0,
+        inserted_count=0,
+        error_count=3,
+        selector_failure_count=0,
+        parsing_failure_count=0,
+        reason_code=PipelineReasonCode.SOURCE_FETCH_FAILED,
+    )
+
+    assert terminal.event_type == PipelineEventType.SOURCE_SUCCEEDED.value
+    assert terminal.reason_code == PipelineReasonCode.SOURCE_FETCH_FAILED.value
+
+
 def test_source_success_keeps_missing_publication_time_unknown(session):  # noqa: ANN001
     _start_run(session, "run-undated-source")
     append_pipeline_event(

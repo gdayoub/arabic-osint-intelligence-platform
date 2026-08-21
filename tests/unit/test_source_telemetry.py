@@ -109,6 +109,16 @@ class _SecretFailureScraper(_FixtureScraper):
         raise RuntimeError(SECRET_TEXT)
 
 
+class _FetchBlockedScraper(_FixtureScraper):
+    """Completes normally but records a closed upstream fetch failure."""
+
+    def __init__(self):
+        super().__init__(links=[])
+
+    def fetch_page(self, url: str) -> tuple[str | None, int | None, str]:
+        return None, 403, url
+
+
 def test_empty_listing_is_visible_as_a_broken_selector():
     scraper = _FixtureScraper(links=[])
 
@@ -243,6 +253,28 @@ def test_source_exception_returns_only_a_closed_safe_reason(
     assert source["reason_code"] == PipelineReasonCode.UNEXPECTED_ERROR.value
     assert "error" not in source
     assert SECRET_TEXT not in repr(source)
+
+
+def test_completed_source_fetch_failure_is_degraded_not_a_scrape_exception(
+    session, blob_store, monkeypatch
+):
+    """A temporary 403 is useful closed telemetry, not an unsafe crash."""
+    scraper = _FetchBlockedScraper()
+    monkeypatch.setattr(ingest_core, "build_scrapers", lambda: [scraper])
+    monkeypatch.setattr(
+        ingest_core,
+        "get_core_session",
+        lambda: nullcontext(session),
+    )
+
+    stats = ingest_core.run_core_ingestion(blob_store=blob_store)
+    source = stats.sources[scraper.source_name]
+
+    assert source["status"] == "degraded"
+    assert source["listing_attempt_count"] == 1
+    assert source["fetch_failure_count"] == 1
+    assert source["article_yield_count"] == 0
+    assert source["reason_code"] == PipelineReasonCode.SOURCE_FETCH_FAILED.value
 
 
 def test_ingestion_callbacks_receive_only_source_alias_and_safe_terminal_summary(

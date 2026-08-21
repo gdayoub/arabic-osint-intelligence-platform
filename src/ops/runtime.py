@@ -49,6 +49,11 @@ _SOURCE_ALIAS_PATTERN = re.compile(r"^[\w][\w .-]{0,99}$", re.UNICODE)
 _STAGE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _DEFAULT_LEASE = timedelta(minutes=30)
 _SOURCE_WARNING_REASONS = {
+    # A completed scraper can report a bounded fetch failure (such as a
+    # temporary 403) without throwing.  Preserve that distinct observation as
+    # degraded health; exceptions and explicit failed source outcomes remain
+    # fail-closed below.
+    PipelineReasonCode.SOURCE_FETCH_FAILED,
     PipelineReasonCode.SOURCE_SELECTOR_FAILED,
     PipelineReasonCode.SOURCE_PARSE_FAILED,
     PipelineReasonCode.SOURCE_ZERO_YIELD,
@@ -118,6 +123,11 @@ class StageOutcome:
     input_count: int = 0
     output_count: int = 0
     error_count: int = 0
+    # A completed operation may establish a closed, fail-closed condition
+    # without raising an exception.  Ingestion uses this for all-source
+    # zero-yield coverage: the source observations remain visible, but the
+    # stage must not let a newly generated snapshot masquerade as fresh data.
+    fatal_reason_code: PipelineReasonCode | None = None
     sources: tuple[SourceOutcome, ...] = ()
     artifacts: tuple[ReleaseArtifact, ...] = ()
 
@@ -272,32 +282,39 @@ def _source_outcome_from_ingest(name: str, raw: Mapping[str, Any]) -> SourceOutc
             latest = None
 
     if raw_status == "success":
-        # A zero yield must carry the exact closed explanation the ledger
-        # requires.  Positive yielded rows with a source warning are valid
-        # degraded completion (for example one parse failure among many rows).
-        if counters["yielded_count"] == 0:
-            reason = PipelineReasonCode.SOURCE_ZERO_YIELD
-            status = "degraded"
-        elif raw_reason is None:
-            reason = None
-            status = "success"
-        elif reason in _SOURCE_WARNING_REASONS:
-            if reason == PipelineReasonCode.SOURCE_ZERO_YIELD:
-                status = "failed"
-                reason = PipelineReasonCode.UNEXPECTED_ERROR
-            else:
+        # A zero yield normally means the explicit zero-yield warning.  Do
+        # not overwrite another closed scraper warning, though: a completed
+        # source_fetch_failed result can legitimately yield zero articles
+        # when a source temporarily blocks every attempted request.
+        if raw_reason is None:
+            if counters["yielded_count"] == 0:
+                reason = PipelineReasonCode.SOURCE_ZERO_YIELD
                 status = "degraded"
+            else:
+                reason = None
+                status = "success"
+        elif reason in _SOURCE_WARNING_REASONS and not (
+            reason == PipelineReasonCode.SOURCE_ZERO_YIELD
+            and counters["yielded_count"] > 0
+        ):
+            status = "degraded"
         else:
             status = "failed"
             reason = PipelineReasonCode.UNEXPECTED_ERROR
     elif raw_status == "degraded":
-        if counters["yielded_count"] == 0:
+        if raw_reason is None and counters["yielded_count"] == 0:
             reason = PipelineReasonCode.SOURCE_ZERO_YIELD
-        elif reason not in _SOURCE_WARNING_REASONS or reason == PipelineReasonCode.SOURCE_ZERO_YIELD:
+            status = "degraded"
+        elif reason in _SOURCE_WARNING_REASONS and not (
+            reason == PipelineReasonCode.SOURCE_ZERO_YIELD
+            and counters["yielded_count"] > 0
+        ):
+            status = "degraded"
+        else:
+            # A malformed reason must not be hidden behind the zero-yield
+            # fallback.  It is not safe to continue with ambiguous telemetry.
             status = "failed"
             reason = PipelineReasonCode.UNEXPECTED_ERROR
-        else:
-            status = "degraded"
     elif raw_status == "failed":
         status = "failed"
         if raw_reason is None:
@@ -329,10 +346,22 @@ def outcome_from_ingest_stats(stats: Any) -> StageOutcome:
         _source_outcome_from_ingest(name, raw)
         for name, raw in sorted(raw_sources.items())
     )
+    # Do not let a newly baked timestamp present an empty scrape as a fresh
+    # snapshot.  A known temporary fetch failure stays a degraded *source*
+    # observation, but the whole ingest stage is unsafe to continue unless at
+    # least one configured source yielded an article.  Positive yield with
+    # zero insertions remains valid: it can simply mean every article was
+    # already known.
+    fatal_reason_code = (
+        PipelineReasonCode.SOURCE_ZERO_YIELD
+        if sources and all(source.yielded_count == 0 for source in sources)
+        else None
+    )
     return StageOutcome(
         input_count=_nonnegative(getattr(stats, "attempted", 0), field="ingest attempted"),
         output_count=_nonnegative(getattr(stats, "inserted", 0), field="ingest inserted"),
         error_count=sum(source.error_count for source in sources),
+        fatal_reason_code=fatal_reason_code,
         sources=sources,
     )
 
@@ -683,7 +712,7 @@ class _RunRecorder:
         reason = source.reason_code
         if failed and reason is None:
             reason = PipelineReasonCode.UNEXPECTED_ERROR
-        if not failed and source.yielded_count == 0:
+        if not failed and source.yielded_count == 0 and reason is None:
             reason = PipelineReasonCode.SOURCE_ZERO_YIELD
         self.append(
             f"source:{stage}:{source.name}:terminal",
@@ -722,6 +751,11 @@ def _validated_outcome(outcome: StageOutcome) -> StageOutcome:
     input_count = _nonnegative(outcome.input_count, field="stage input_count")
     output_count = _nonnegative(outcome.output_count, field="stage output_count")
     error_count = _nonnegative(outcome.error_count, field="stage error_count")
+    fatal_reason_code = outcome.fatal_reason_code
+    if fatal_reason_code is not None:
+        fatal_reason_code = _safe_reason(
+            fatal_reason_code, fallback=PipelineReasonCode.UNEXPECTED_ERROR
+        )
     names: set[str] = set()
     normalized_sources: list[SourceOutcome] = []
     for source in outcome.sources:
@@ -755,24 +789,27 @@ def _validated_outcome(outcome: StageOutcome) -> StageOutcome:
         # reason the source-success event would reject.
         status = source.status
         if status == "success":
-            if yielded_count == 0:
-                status = "degraded"
-                reason = PipelineReasonCode.SOURCE_ZERO_YIELD
-            elif reason is not None:
-                if (
-                    reason in _SOURCE_WARNING_REASONS
-                    and reason != PipelineReasonCode.SOURCE_ZERO_YIELD
-                ):
+            if reason is None:
+                if yielded_count == 0:
                     status = "degraded"
-                else:
-                    status = "failed"
-                    reason = PipelineReasonCode.UNEXPECTED_ERROR
+                    reason = PipelineReasonCode.SOURCE_ZERO_YIELD
+            elif reason in _SOURCE_WARNING_REASONS and not (
+                reason == PipelineReasonCode.SOURCE_ZERO_YIELD
+                and yielded_count > 0
+            ):
+                status = "degraded"
+            else:
+                status = "failed"
+                reason = PipelineReasonCode.UNEXPECTED_ERROR
         elif status == "degraded":
-            if yielded_count == 0:
+            if reason is None and yielded_count == 0:
                 reason = PipelineReasonCode.SOURCE_ZERO_YIELD
-            elif (
-                reason not in _SOURCE_WARNING_REASONS
-                or reason == PipelineReasonCode.SOURCE_ZERO_YIELD
+            elif not (
+                reason in _SOURCE_WARNING_REASONS
+                and not (
+                    reason == PipelineReasonCode.SOURCE_ZERO_YIELD
+                    and yielded_count > 0
+                )
             ):
                 status = "failed"
                 reason = PipelineReasonCode.UNEXPECTED_ERROR
@@ -799,6 +836,7 @@ def _validated_outcome(outcome: StageOutcome) -> StageOutcome:
         input_count=input_count,
         output_count=output_count,
         error_count=error_count,
+        fatal_reason_code=fatal_reason_code,
         sources=tuple(normalized_sources),
         artifacts=tuple(outcome.artifacts),
     )
@@ -1013,6 +1051,14 @@ def run_orchestrated_pipeline(
                 recorder,
                 stage=stage.name,
                 reason_code=PipelineReasonCode.UPSTREAM_STAGE_FAILED,
+                outcome=outcome,
+            )
+
+        if outcome.fatal_reason_code is not None:
+            _failure(
+                recorder,
+                stage=stage.name,
+                reason_code=outcome.fatal_reason_code,
                 outcome=outcome,
             )
 

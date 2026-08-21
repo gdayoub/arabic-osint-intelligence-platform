@@ -70,6 +70,7 @@ _FAILURE_EVENTS = {
     PipelineEventType.RELEASE_FAILED,
 }
 _SOURCE_WARNING_REASONS = {
+    PipelineReasonCode.SOURCE_FETCH_FAILED,
     PipelineReasonCode.SOURCE_SELECTOR_FAILED,
     PipelineReasonCode.SOURCE_PARSE_FAILED,
     PipelineReasonCode.SOURCE_ZERO_YIELD,
@@ -267,9 +268,9 @@ def _validate_source_summary(
 
     if event_type == PipelineEventType.SOURCE_SUCCEEDED:
         assert output_count is not None
-        if output_count == 0 and reason_code != PipelineReasonCode.SOURCE_ZERO_YIELD:
+        if output_count == 0 and reason_code not in _SOURCE_WARNING_REASONS:
             raise EventValidationError(
-                "a zero-yield source must record reason_code='source_zero_yield'"
+                "a zero-yield source must record a closed source warning reason"
             )
         if output_count > 0 and reason_code == PipelineReasonCode.SOURCE_ZERO_YIELD:
             raise EventValidationError("source_zero_yield contradicts a positive output_count")

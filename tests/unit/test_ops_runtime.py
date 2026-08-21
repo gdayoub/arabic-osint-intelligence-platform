@@ -379,6 +379,7 @@ def test_ingest_adapter_keeps_duplicate_yield_distinct_from_insertions():
     assert outcome.sources[0].yielded_count == 3
     assert outcome.sources[0].inserted_count == 0
     assert outcome.sources[0].status == "success"
+    assert outcome.fatal_reason_code is None
 
 
 def test_inconsistent_zero_yield_reason_fails_closed_before_ledger_write():
@@ -402,6 +403,30 @@ def test_inconsistent_zero_yield_reason_fails_closed_before_ledger_write():
 
     assert outcome.sources[0].status == "failed"
     assert outcome.sources[0].reason_code == PipelineReasonCode.UNEXPECTED_ERROR
+
+
+def test_malformed_zero_yield_source_telemetry_fails_closed_before_ledger_write():
+    class IngestStats:
+        attempted = 0
+        inserted = 0
+        sources = {
+            "BBC Arabic": {
+                "status": "degraded",
+                "article_attempt_count": 0,
+                "article_yield_count": 0,
+                "inserted_count": 0,
+                "error_count": 1,
+                "selector_failure_count": 0,
+                "parsing_failure_count": 0,
+                "reason_code": "not-a-safe-reason",
+            }
+        }
+
+    outcome = outcome_from_ingest_stats(IngestStats())
+
+    assert outcome.sources[0].status == "failed"
+    assert outcome.sources[0].reason_code == PipelineReasonCode.UNEXPECTED_ERROR
+    assert outcome.fatal_reason_code == PipelineReasonCode.SOURCE_ZERO_YIELD
 
 
 def test_core_wrapper_refuses_candidate_mode_without_a_baked_bundle():
@@ -450,6 +475,174 @@ def test_hard_source_failure_blocks_bake_and_never_emits_a_release_event(session
     event_types = _event_types(session, "ledger-hard-source-failure")
     assert PipelineEventType.RUN_FAILED.value in event_types
     assert PipelineEventType.STAGE_STARTED.value in event_types
+    assert _RELEASE_EVENT_TYPES.isdisjoint(event_types)
+
+
+def test_completed_fetch_failure_with_other_source_coverage_bakes_degraded(
+    session, monkeypatch, tmp_path
+):
+    """A temporary source block must not suppress a covered snapshot."""
+    from scripts import bake_dashboard_data
+    from src.pipeline import extract_core, ingest_core, process_core, resolve_core
+
+    execution: list[str] = []
+    out_path = tmp_path / "dist" / "data.json"
+    source_rows = {
+        "AlArabiya": {
+            "status": "degraded",
+            "article_attempt_count": 0,
+            "article_yield_count": 0,
+            "inserted_count": 0,
+            "error_count": 3,
+            "selector_failure_count": 0,
+            "parsing_failure_count": 0,
+            "reason_code": PipelineReasonCode.SOURCE_FETCH_FAILED.value,
+        },
+        "BBC Arabic": {
+            "status": "success",
+            "article_attempt_count": 1,
+            "article_yield_count": 1,
+            "inserted_count": 0,
+            "error_count": 0,
+            "selector_failure_count": 0,
+            "parsing_failure_count": 0,
+            "latest_successful_article_at": BASE_TIME,
+            "reason_code": None,
+        },
+    }
+
+    def fake_ingest(**kwargs):  # noqa: ANN001
+        execution.append("ingest")
+        for name, telemetry in source_rows.items():
+            kwargs["on_source_started"](name)
+            kwargs["on_source_finished"](name, telemetry)
+        return SimpleNamespace(attempted=1, inserted=0, sources=source_rows)
+
+    def fake_process():
+        execution.append("process")
+        return SimpleNamespace(scanned=0, processed=0, errors=0)
+
+    def fake_extract():
+        execution.append("extract")
+        return SimpleNamespace(documents_scanned=0, documents_processed=0, errors=0)
+
+    def fake_resolve():
+        execution.append("resolve")
+        return SimpleNamespace(mentions=0, entities_created=0)
+
+    def fake_bake(path: Path, recent_limit: int = 30):  # noqa: ANN001
+        del recent_limit
+        execution.append("bake")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'{"stats":{"total_processed":0}}\n')
+        return {"stats": {"total_processed": 0}}
+
+    monkeypatch.setattr(
+        runtime,
+        "configured_ingest_source_names",
+        lambda: ("AlArabiya", "BBC Arabic"),
+    )
+    monkeypatch.setattr(ingest_core, "run_core_ingestion", fake_ingest)
+    monkeypatch.setattr(process_core, "run_core_processing", fake_process)
+    monkeypatch.setattr(extract_core, "run_core_extraction", fake_extract)
+    monkeypatch.setattr(resolve_core, "run_core_resolution", fake_resolve)
+    monkeypatch.setattr(bake_dashboard_data, "run_bake", fake_bake)
+
+    result = run_core_pipeline(
+        bake_out_path=out_path,
+        session_scope=_scope(session),
+        run_id="covered-fetch-degraded",
+        commit_sha=COMMIT_SHA,
+        clock=_clock,
+    )
+
+    assert execution == ["ingest", "process", "extract", "resolve", "bake"]
+    assert out_path.is_file()
+    assert result.release_candidate is None
+    assert result.health.status == "degraded"
+    fetch_source = next(
+        source for source in result.health.sources if source.name == "AlArabiya"
+    )
+    assert fetch_source.status == "degraded"
+    assert fetch_source.reason is not None
+    assert fetch_source.reason.code == PipelineReasonCode.SOURCE_FETCH_FAILED.value
+    assert next(stage for stage in result.health.stages if stage.name == "bake").status == "succeeded"
+    event_types = _event_types(session, result.run_id)
+    assert PipelineEventType.SOURCE_FAILED.value not in event_types
+    assert PipelineEventType.RUN_SUCCEEDED.value in event_types
+    assert _RELEASE_EVENT_TYPES.isdisjoint(event_types)
+
+
+def test_all_zero_sources_fail_closed_before_bake_even_with_known_warnings(
+    session, monkeypatch, tmp_path
+):
+    """An empty run must never gain freshness merely because baking ran."""
+    from src.pipeline import ingest_core
+
+    execution: list[str] = []
+    source_rows = {
+        "AlArabiya": {
+            "status": "degraded",
+            "article_attempt_count": 0,
+            "article_yield_count": 0,
+            "inserted_count": 0,
+            "error_count": 3,
+            "selector_failure_count": 0,
+            "parsing_failure_count": 0,
+            "reason_code": PipelineReasonCode.SOURCE_FETCH_FAILED.value,
+        },
+        "BBC Arabic": {
+            "status": "degraded",
+            "article_attempt_count": 0,
+            "article_yield_count": 0,
+            "inserted_count": 0,
+            "error_count": 1,
+            "selector_failure_count": 1,
+            "parsing_failure_count": 0,
+            "reason_code": PipelineReasonCode.SOURCE_SELECTOR_FAILED.value,
+        },
+    }
+
+    def fake_ingest(**kwargs):  # noqa: ANN001
+        execution.append("ingest")
+        for name, telemetry in source_rows.items():
+            kwargs["on_source_started"](name)
+            kwargs["on_source_finished"](name, telemetry)
+        return SimpleNamespace(attempted=0, inserted=0, sources=source_rows)
+
+    monkeypatch.setattr(
+        runtime,
+        "configured_ingest_source_names",
+        lambda: ("AlArabiya", "BBC Arabic"),
+    )
+    monkeypatch.setattr(ingest_core, "run_core_ingestion", fake_ingest)
+
+    with pytest.raises(PipelineExecutionFailed) as raised:
+        run_core_pipeline(
+            bake_out_path=tmp_path / "dist" / "data.json",
+            session_scope=_scope(session),
+            run_id="all-zero-coverage",
+            commit_sha=COMMIT_SHA,
+            clock=_clock,
+        )
+
+    assert execution == ["ingest"]
+    assert raised.value.reason_code == PipelineReasonCode.SOURCE_ZERO_YIELD
+    health = raised.value.health
+    assert health.status == "failed"
+    assert health.stages[0].name == "ingest"
+    assert health.stages[0].status == "failed"
+    assert {source.status for source in health.sources} == {"degraded"}
+    assert {
+        source.reason.code for source in health.sources if source.reason is not None
+    } == {
+        PipelineReasonCode.SOURCE_FETCH_FAILED.value,
+        PipelineReasonCode.SOURCE_SELECTOR_FAILED.value,
+    }
+    event_types = _event_types(session, "all-zero-coverage")
+    assert PipelineEventType.STAGE_FAILED.value in event_types
+    assert PipelineEventType.RUN_FAILED.value in event_types
+    assert PipelineEventType.RUN_SUCCEEDED.value not in event_types
     assert _RELEASE_EVENT_TYPES.isdisjoint(event_types)
 
 

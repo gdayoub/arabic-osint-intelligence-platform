@@ -80,6 +80,11 @@ class IngestCoreStats:
 
 
 _DEGRADED_SOURCE_REASONS = {
+    # A scraper can complete normally while one or more listings/article pages
+    # are temporarily unavailable (for example a short-lived 403).  That is
+    # an explicit, closed scraper observation, not the same thing as the
+    # scraper raising an unexpected exception or a database write failing.
+    PipelineReasonCode.SOURCE_FETCH_FAILED,
     PipelineReasonCode.SOURCE_SELECTOR_FAILED,
     PipelineReasonCode.SOURCE_PARSE_FAILED,
     PipelineReasonCode.SOURCE_ZERO_YIELD,
