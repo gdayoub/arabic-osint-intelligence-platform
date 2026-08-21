@@ -119,6 +119,20 @@ def test_normalize_is_idempotent(text):
     assert ar.normalize(once) == once
 
 
+def test_normalize_is_idempotent_when_lowercase_expands_unicode():
+    """İ.lower() adds a combining dot, which must not destabilize a key.
+
+    This also checks the aligned form still has exactly one original offset
+    for the one surviving normalized character.
+    """
+    aligned = ar.normalize_aligned("İ")
+
+    assert aligned.text == "i"
+    assert aligned.source_offsets == (0,)
+    assert aligned.original_span(0, 1) == (0, 1)
+    assert ar.normalize(aligned.text) == aligned.text
+
+
 @settings(max_examples=300)
 @given(st.text())
 def test_normalize_never_returns_leading_or_trailing_space(text):

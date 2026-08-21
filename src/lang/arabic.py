@@ -172,17 +172,27 @@ class ArabicAdapter:
                     # character and nothing to record an offset for
                     continue
 
-                if _PUNCT.match(folded) or folded.isspace():
-                    # punctuation and whitespace both become a single space.
-                    # i skip it if the last thing i wrote was already a space
-                    # so runs collapse without needing a second pass
-                    if chars and chars[-1] != " ":
-                        chars.append(" ")
-                        offsets.append(index)
-                    continue
+                # A Unicode lowercase operation can expand one code point.
+                # ``İ`` becomes ``i`` plus COMBINING DOT ABOVE, for example.
+                # I discard a combining mark here just like the Arabic marks
+                # above; otherwise the next normalization pass sees it as
+                # punctuation and changes the comparison key a second time.
+                for lowered in folded.lower():
+                    if unicodedata.combining(lowered):
+                        continue
 
-                chars.append(folded.lower())
-                offsets.append(index)
+                    if _PUNCT.match(lowered) or lowered.isspace():
+                        # punctuation and whitespace both become a single
+                        # space. i skip it if the last thing i wrote was
+                        # already a space so runs collapse without needing a
+                        # second pass.
+                        if chars and chars[-1] != " ":
+                            chars.append(" ")
+                            offsets.append(index)
+                        continue
+
+                    chars.append(lowered)
+                    offsets.append(index)
 
         # strip a trailing space. there can only ever be one because of the
         # collapse above. leading spaces get skipped by the same check since
