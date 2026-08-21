@@ -23,7 +23,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.ops.events import PipelineEventType, PipelineReasonCode
-from src.ops.ledger import append_pipeline_event
+from src.ops.health import project_run_health
+from src.ops.ledger import append_pipeline_event, load_run_events
 from src.store.blob import BlobStore
 from src.store.orm import PipelineEventORM, PublicationStateORM
 
@@ -39,6 +40,10 @@ class ReleaseError(RuntimeError):
 
 class CandidateIntegrityError(ReleaseError):
     """Raised when a candidate does not match its immutable manifest."""
+
+
+class CandidateRunNotEligible(ReleaseError):
+    """Raised when a candidate is not backed by one healthy completed run."""
 
 
 class StaleReleaseCandidate(ReleaseError):
@@ -141,6 +146,27 @@ SessionFactory = Callable[[], Session]
 
 _RELEASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_RUN_TERMINAL_EVENT_TYPES = frozenset(
+    {
+        PipelineEventType.RUN_SUCCEEDED,
+        PipelineEventType.RUN_FAILED,
+        PipelineEventType.RUN_ABANDONED,
+    }
+)
+_RUN_TERMINAL_EVENT_VALUES = frozenset(
+    item.value for item in _RUN_TERMINAL_EVENT_TYPES
+)
+_DATA_BOUNDARY_EVENT_VALUES = frozenset(
+    {
+        PipelineEventType.STAGE_STARTED.value,
+        PipelineEventType.STAGE_SUCCEEDED.value,
+        PipelineEventType.STAGE_FAILED.value,
+        PipelineEventType.SOURCE_STARTED.value,
+        PipelineEventType.SOURCE_SUCCEEDED.value,
+        PipelineEventType.SOURCE_FAILED.value,
+    }
+)
+_CANDIDATE_PREPARATION_STAGE = "prepare_release"
 
 
 def _utc_now() -> datetime:
@@ -635,7 +661,125 @@ def _candidate_registration(
         or row.manifest_sha256 != candidate.manifest_sha256
     ):
         raise CandidateIntegrityError("candidate manifest differs from ledger registration")
+    if row.run_id != candidate.run_id or row.commit_sha != candidate.commit_sha:
+        raise CandidateIntegrityError("candidate identity differs from ledger registration")
     return row
+
+
+def _event_order(row: PipelineEventORM) -> tuple[datetime, int]:
+    """Match the immutable ledger's chronological ordering for one event."""
+    return (_database_utc(row.occurred_at), row.id)
+
+
+def _require_eligible_candidate_run(
+    session: Session,
+    candidate: ReleaseCandidate,
+    registration: PipelineEventORM,
+) -> None:
+    """Fail closed unless the candidate's own run completed healthily.
+
+    Promotion can use a separate operator run ID (notably for a rollback),
+    but it must never borrow that run's health.  The candidate's recorded run
+    is the only evidence that its immutable bytes came from a finished data
+    build.
+    """
+    events = load_run_events(session, candidate.run_id)
+    started = next(
+        (
+            row
+            for row in events
+            if row.event_type == PipelineEventType.RUN_STARTED.value
+        ),
+        None,
+    )
+    if started is None:
+        raise CandidateRunNotEligible(
+            "candidate run has no run_started event and cannot be promoted"
+        )
+    if started.commit_sha != candidate.commit_sha:
+        raise CandidateRunNotEligible(
+            "candidate commit does not match the run that produced it"
+        )
+
+    terminals = [row for row in events if row.event_type in _RUN_TERMINAL_EVENT_VALUES]
+    if len(terminals) != 1:
+        raise CandidateRunNotEligible(
+            "candidate run must have exactly one terminal event before promotion"
+        )
+    terminal = terminals[0]
+    if terminal.event_type != PipelineEventType.RUN_SUCCEEDED.value:
+        raise CandidateRunNotEligible(
+            "candidate run did not complete successfully and cannot be promoted"
+        )
+    if terminal.commit_sha != candidate.commit_sha:
+        raise CandidateRunNotEligible(
+            "candidate commit does not match its successful terminal event"
+        )
+
+    # Candidate registration is deliberately between run start and terminal
+    # success.  A later registration is a new, unobserved bundle, not proof
+    # that the completed run produced the candidate it is asking to promote.
+    if _event_order(registration) <= _event_order(started):
+        raise CandidateRunNotEligible(
+            "candidate registration must follow the run_started event"
+        )
+    if _event_order(registration) >= _event_order(terminal):
+        raise CandidateRunNotEligible(
+            "candidate registration must precede the successful terminal event"
+        )
+
+    later_data_boundaries = [
+        row
+        for row in events
+        if row.event_type in _DATA_BOUNDARY_EVENT_VALUES
+        and row.stage != _CANDIDATE_PREPARATION_STAGE
+        and _event_order(row) > _event_order(registration)
+    ]
+    if later_data_boundaries:
+        raise CandidateRunNotEligible(
+            "candidate registration precedes later data-work boundaries"
+        )
+
+    preparation_events = [
+        row for row in events if row.stage == _CANDIDATE_PREPARATION_STAGE
+    ]
+    if preparation_events:
+        preparation_started = next(
+            (
+                row
+                for row in preparation_events
+                if row.event_type == PipelineEventType.STAGE_STARTED.value
+            ),
+            None,
+        )
+        preparation_succeeded = next(
+            (
+                row
+                for row in preparation_events
+                if row.event_type == PipelineEventType.STAGE_SUCCEEDED.value
+            ),
+            None,
+        )
+        if (
+            preparation_started is None
+            or preparation_succeeded is None
+            or _event_order(preparation_started) >= _event_order(registration)
+            or _event_order(registration) >= _event_order(preparation_succeeded)
+        ):
+            raise CandidateRunNotEligible(
+                "candidate registration must be inside successful prepare_release"
+            )
+
+    try:
+        health = project_run_health(events)
+    except ValueError as exc:
+        raise CandidateRunNotEligible(
+            "candidate run history cannot prove healthy completion"
+        ) from exc
+    if health.status != "healthy":
+        raise CandidateRunNotEligible(
+            "candidate run must project healthy before promotion"
+        )
 
 
 def _clear_pending(state: PublicationStateORM) -> None:
@@ -659,8 +803,9 @@ def begin_promotion(
     operation_id: str | None = None,
     occurred_at: datetime | None = None,
 ) -> PromotionPlan:
-    """Compare high-water state and persist a promotion plan before deploy."""
-    _candidate_registration(session, candidate)
+    """Verify candidate-run eligibility, then persist a pre-deploy promotion plan."""
+    registration = _candidate_registration(session, candidate)
+    _require_eligible_candidate_run(session, candidate, registration)
     state = _publication_state(session, lock=True)
     if state.pending_release_id is not None:
         raise PromotionInProgress(

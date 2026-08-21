@@ -10,10 +10,11 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.ops.events import PipelineEventType
+from src.ops.events import PipelineEventType, PipelineReasonCode
 from src.ops.ledger import InvalidEventTransition, append_pipeline_event
 from src.ops.releases import (
     CandidateIntegrityError,
+    CandidateRunNotEligible,
     DeploymentStatus,
     PromotionPlan,
     PromotionUncertain,
@@ -141,6 +142,59 @@ def _start_run(factory, run_id: str, offset: int) -> None:  # noqa: ANN001
         session.commit()
 
 
+def _register_candidate(
+    session: Session,
+    store: MemoryBlobStore,
+    *,
+    name: str,
+    offset: int,
+):
+    run_id = f"run-{name}"
+    return create_release_candidate(
+        session,
+        store,
+        run_id=run_id,
+        commit_sha=COMMIT_SHA,
+        release_id=f"release-{name}",
+        occurred_at=BASE_TIME + timedelta(seconds=offset + 1),
+        artifacts=[
+            ReleaseArtifact(
+                path="data.json",
+                data=(f'{{"release":"{name}","title":"مرحبا"}}\n').encode(),
+                content_type="application/json; charset=utf-8",
+            ),
+            ReleaseArtifact(
+                path="assets/app.css",
+                data=f"/* {name} */\n".encode(),
+                content_type="text/css; charset=utf-8",
+            ),
+        ],
+    )
+
+
+def _finish_run(
+    session: Session,
+    run_id: str,
+    *,
+    offset: int,
+    event_type: PipelineEventType = PipelineEventType.RUN_SUCCEEDED,
+) -> None:
+    values: dict[str, PipelineReasonCode] = {}
+    if event_type == PipelineEventType.RUN_FAILED:
+        values["reason_code"] = PipelineReasonCode.UPSTREAM_STAGE_FAILED
+    elif event_type == PipelineEventType.RUN_ABANDONED:
+        values["reason_code"] = PipelineReasonCode.LEASE_EXPIRED
+    append_pipeline_event(
+        session,
+        event_key=f"{run_id}:{event_type.value}",
+        run_id=run_id,
+        event_type=event_type,
+        commit_sha=COMMIT_SHA,
+        occurred_at=BASE_TIME + timedelta(seconds=offset),
+        **values,
+    )
+
+
 def _candidate(
     factory,  # noqa: ANN001
     store: MemoryBlobStore,
@@ -150,28 +204,239 @@ def _candidate(
     run_id = f"run-{name}"
     _start_run(factory, run_id, offset)
     with factory() as session:
-        candidate = create_release_candidate(
-            session,
-            store,
-            run_id=run_id,
-            commit_sha=COMMIT_SHA,
-            release_id=f"release-{name}",
-            occurred_at=BASE_TIME + timedelta(seconds=offset + 1),
-            artifacts=[
-                ReleaseArtifact(
-                    path="data.json",
-                    data=(f'{{"release":"{name}","title":"مرحبا"}}\n').encode(),
-                    content_type="application/json; charset=utf-8",
-                ),
-                ReleaseArtifact(
-                    path="assets/app.css",
-                    data=f"/* {name} */\n".encode(),
-                    content_type="text/css; charset=utf-8",
-                ),
-            ],
-        )
+        candidate = _register_candidate(session, store, name=name, offset=offset)
+        # Candidate creation happens before the runner writes its final
+        # success.  The promotion guard relies on that order to prove this
+        # exact immutable bundle belongs to the completed run.
+        _finish_run(session, run_id, offset=offset + 2)
         session.commit()
     return candidate
+
+
+def _assert_not_promotable(
+    factory,  # noqa: ANN001
+    candidate,
+    *,
+    message: str,
+) -> None:
+    with factory() as session:
+        with pytest.raises(CandidateRunNotEligible, match=message):
+            begin_promotion(session, candidate)
+        started = session.scalar(
+            select(PipelineEventORM).where(
+                PipelineEventORM.release_id == candidate.release_id,
+                PipelineEventORM.event_type
+                == PipelineEventType.PROMOTION_STARTED.value,
+            )
+        )
+        assert started is None
+
+
+@pytest.mark.parametrize(
+    "terminal_event",
+    (
+        PipelineEventType.RUN_FAILED,
+        PipelineEventType.RUN_ABANDONED,
+    ),
+)
+def test_failed_or_abandoned_candidate_run_cannot_begin_promotion(
+    release_database,  # noqa: ANN001
+    terminal_event: PipelineEventType,
+):
+    store = MemoryBlobStore()
+    name = terminal_event.value
+    run_id = f"run-{name}"
+    _start_run(release_database, run_id, 0)
+
+    with release_database() as session:
+        candidate = _register_candidate(session, store, name=name, offset=0)
+        _finish_run(session, run_id, offset=2, event_type=terminal_event)
+        session.commit()
+
+    _assert_not_promotable(
+        release_database,
+        candidate,
+        message="did not complete successfully",
+    )
+
+
+def test_degraded_candidate_run_cannot_begin_promotion(release_database):  # noqa: ANN001
+    store = MemoryBlobStore()
+    name = "degraded"
+    run_id = f"run-{name}"
+    _start_run(release_database, run_id, 0)
+
+    with release_database() as session:
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:process:started",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_STARTED,
+            stage="process",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=1),
+        )
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:process:succeeded",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_SUCCEEDED,
+            stage="process",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=2),
+            error_count=1,
+        )
+        candidate = _register_candidate(session, store, name=name, offset=2)
+        _finish_run(session, run_id, offset=4)
+        session.commit()
+
+    _assert_not_promotable(
+        release_database,
+        candidate,
+        message="must project healthy",
+    )
+
+
+def test_candidate_registered_after_run_terminal_cannot_begin_promotion(
+    release_database,  # noqa: ANN001
+):
+    store = MemoryBlobStore()
+    name = "after-terminal"
+    run_id = f"run-{name}"
+    _start_run(release_database, run_id, 0)
+
+    with release_database() as session:
+        _finish_run(session, run_id, offset=1)
+        candidate = _register_candidate(session, store, name=name, offset=2)
+        session.commit()
+
+    _assert_not_promotable(
+        release_database,
+        candidate,
+        message="must precede the successful terminal event",
+    )
+
+
+def test_candidate_registered_before_later_data_work_cannot_begin_promotion(
+    release_database,  # noqa: ANN001
+):
+    store = MemoryBlobStore()
+    name = "before-data-work"
+    run_id = f"run-{name}"
+    _start_run(release_database, run_id, 0)
+
+    with release_database() as session:
+        candidate = _register_candidate(session, store, name=name, offset=0)
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:process:started",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_STARTED,
+            stage="process",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=2),
+        )
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:process:succeeded",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_SUCCEEDED,
+            stage="process",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=3),
+        )
+        _finish_run(session, run_id, offset=4)
+        session.commit()
+
+    _assert_not_promotable(
+        release_database,
+        candidate,
+        message="precedes later data-work boundaries",
+    )
+
+
+def test_candidate_inside_successful_prepare_release_can_begin_promotion(
+    release_database,  # noqa: ANN001
+):
+    store = MemoryBlobStore()
+    name = "prepared-in-order"
+    run_id = f"run-{name}"
+    _start_run(release_database, run_id, 0)
+
+    with release_database() as session:
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:process:started",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_STARTED,
+            stage="process",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=1),
+        )
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:process:succeeded",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_SUCCEEDED,
+            stage="process",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=2),
+        )
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:prepare-release:started",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_STARTED,
+            stage="prepare_release",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=3),
+        )
+        candidate = _register_candidate(session, store, name=name, offset=3)
+        append_pipeline_event(
+            session,
+            event_key=f"{run_id}:prepare-release:succeeded",
+            run_id=run_id,
+            event_type=PipelineEventType.STAGE_SUCCEEDED,
+            stage="prepare_release",
+            commit_sha=COMMIT_SHA,
+            occurred_at=BASE_TIME + timedelta(seconds=5),
+            input_count=2,
+            output_count=1,
+        )
+        _finish_run(session, run_id, offset=6)
+
+        plan = begin_promotion(session, candidate, operation_id="prepared-in-order")
+        assert plan.candidate == candidate
+        assert plan.run_id == candidate.run_id
+        session.commit()
+
+
+def test_orphaned_candidate_run_cannot_begin_promotion(release_database):  # noqa: ANN001
+    store = MemoryBlobStore()
+    candidate = _candidate(release_database, store, "orphaned", 0)
+
+    # A damaged/adopted ledger could contain a registered candidate while its
+    # run facts are missing. Use a Core delete only to model that impossible
+    # history; normal ORM writes remain append-only.
+    with release_database() as session:
+        session.execute(
+            PipelineEventORM.__table__.delete().where(
+                PipelineEventORM.run_id == candidate.run_id,
+                PipelineEventORM.event_type.in_(
+                    (
+                        PipelineEventType.RUN_STARTED.value,
+                        PipelineEventType.RUN_SUCCEEDED.value,
+                    )
+                ),
+            )
+        )
+        session.commit()
+
+    _assert_not_promotable(
+        release_database,
+        candidate,
+        message="has no run_started event",
+    )
 
 
 def test_newer_candidate_publishes_and_older_queued_candidate_is_rejected(
