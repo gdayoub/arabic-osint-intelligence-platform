@@ -57,6 +57,10 @@ class BaseScraper(ABC):
     - dedupe article links before fetching article pages
     """
 
+    # Subclasses whose robots.txt declares a stricter Crawl-delay than the
+    # global default override this, e.g. `MIN_DELAY_SECONDS = 5.0`.
+    MIN_DELAY_SECONDS: float = 0.0
+
     def __init__(
         self,
         source_name: str,
@@ -121,7 +125,7 @@ class BaseScraper(ABC):
         return html
 
     def _polite_delay(self) -> None:
-        base = self.settings.scrape_delay_seconds
+        base = max(self.settings.scrape_delay_seconds, self.MIN_DELAY_SECONDS)
         jitter = random.uniform(0.0, 0.35)
         time.sleep(base + jitter)
 
