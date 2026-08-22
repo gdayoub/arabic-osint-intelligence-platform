@@ -526,7 +526,8 @@ def test_completed_fetch_failure_with_other_source_coverage_bakes_degraded(
         execution.append("extract")
         return SimpleNamespace(documents_scanned=0, documents_processed=0, errors=0)
 
-    def fake_resolve():
+    def fake_resolve(**kwargs):
+        del kwargs
         execution.append("resolve")
         return SimpleNamespace(mentions=0, entities_created=0)
 
@@ -668,7 +669,8 @@ def test_best_effort_translation_failure_bakes_and_finishes_degraded_without_rel
         execution.append("extract")
         return SimpleNamespace(documents_scanned=0, documents_processed=0, errors=0)
 
-    def fake_resolve():
+    def fake_resolve(**kwargs):
+        del kwargs
         execution.append("resolve")
         return SimpleNamespace(mentions=0, entities_created=0)
 

@@ -61,6 +61,8 @@ def test_run_core_pipeline_cli_forces_ledger_only_options(monkeypatch, capsys):
         "run_id": "github-123-1",
         "commit_sha": COMMIT_SHA,
         "lease_duration": timedelta(minutes=12),
+        "review_margin": 0.15,
+        "review_limit": 20,
     }
     assert "no release was prepared or published" in capsys.readouterr().out
 

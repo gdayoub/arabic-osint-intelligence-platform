@@ -97,6 +97,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="skip",
         help="Skip title translation, or record a non-fatal translation failure as degraded",
     )
+    ledgered_pipeline.add_argument(
+        "--review-margin",
+        type=float,
+        default=0.15,
+        help="Queue pairs within this distance of the scorer threshold",
+    )
+    ledgered_pipeline.add_argument(
+        "--review-limit",
+        type=int,
+        default=20,
+        help="Maximum pairs queued per scorer version; nearest pairs fill an empty uncertainty band",
+    )
     sub.add_parser(
         "reconcile-pipeline-runs",
         help="Mark expired unfinished pipeline runs abandoned without touching release state",
@@ -214,6 +226,8 @@ def main() -> None:
             run_id=args.run_id,
             commit_sha=args.commit_sha,
             lease_duration=timedelta(minutes=args.lease_minutes),
+            review_margin=args.review_margin,
+            review_limit=args.review_limit,
         )
         print(
             f"ledgered pipeline run={result.run_id} health={result.health.status} "

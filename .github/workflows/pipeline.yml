@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: '0 */6 * * *'   # every 6 hours at :00 UTC
   workflow_dispatch:
+    inputs:
+      review_margin:
+        description: >-
+          Distance from the scorer threshold that queues a pair for review.
+          Leave as 0.15 for normal runs; widen only for a one-off manual
+          bulk-labeling session (see docs/adr/0013).
+        required: false
+        default: "0.15"
 
 # Prevent two overlapping runs from racing the same URL-unique inserts.
 # cancel-in-progress: false -- queue the next run rather than kill one
@@ -56,6 +64,8 @@ jobs:
       # best-effort mode: a provider failure finishes the ledgered run as
       # degraded after baking the still-usable Arabic snapshot.
       - name: Run ledgered core pipeline
+        env:
+          REVIEW_MARGIN: ${{ inputs.review_margin || '0.15' }}
         run: |
           translation_mode=skip
           if [ -n "${DEEPL_API_KEY:-}" ]; then
@@ -65,6 +75,7 @@ jobs:
             --run-id "github-${{ github.run_id }}-${{ github.run_attempt }}" \
             --commit-sha "${{ github.sha }}" \
             --translation-mode "$translation_mode" \
+            --review-margin "$REVIEW_MARGIN" \
             --out dist/data.json
 
       - run: cp src/api/static/dashboard.html dist/index.html

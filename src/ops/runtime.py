@@ -534,6 +534,8 @@ def build_core_pipeline_stages(
     *,
     translation_mode: str = "skip",
     bake_out_path: Path | None = None,
+    review_margin: float = 0.15,
+    review_limit: int = 20,
 ) -> tuple[PipelineStage, ...]:
     """Build, but do not run, the current core pipeline in ledger order."""
     from src.pipeline.extract_core import run_core_extraction
@@ -568,7 +570,9 @@ def build_core_pipeline_stages(
         ),
         PipelineStage(
             name="resolve",
-            operation=lambda _runtime: outcome_from_resolve_stats(run_core_resolution()),
+            operation=lambda _runtime: outcome_from_resolve_stats(
+                run_core_resolution(review_margin=review_margin, review_limit=review_limit)
+            ),
         ),
     ]
     if translation_mode == "best-effort":
@@ -1134,6 +1138,8 @@ def run_core_pipeline(
     prepare_release: bool = False,
     release_id: str | None = None,
     extractor_versions: Mapping[str, str] | None = None,
+    review_margin: float = 0.15,
+    review_limit: int = 20,
     **kwargs: Any,
 ) -> OrchestratedRun:
     """Run the core data stages with ledger evidence, not a release claim."""
@@ -1150,6 +1156,8 @@ def run_core_pipeline(
         build_core_pipeline_stages(
             translation_mode=translation_mode,
             bake_out_path=bake_out_path,
+            review_margin=review_margin,
+            review_limit=review_limit,
         ),
         prepare_release=prepare_release,
         release_id=release_id,
