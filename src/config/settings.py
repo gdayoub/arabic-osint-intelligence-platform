@@ -54,6 +54,17 @@ class Settings:
     almasryalyoum_seed_urls: List[str] | None = None
     sana_seed_urls: List[str] | None = None
     aawsat_seed_urls: List[str] | None = None
+    almada_seed_urls: List[str] | None = None
+    alchourouk_seed_urls: List[str] | None = None
+    ammonnews_seed_urls: List[str] | None = None
+    hespress_seed_urls: List[str] | None = None
+    akhbarona_seed_urls: List[str] | None = None
+    alrai_seed_urls: List[str] | None = None
+    sudantribune_seed_urls: List[str] | None = None
+    almasdaronline_seed_urls: List[str] | None = None
+    akhbaralkhaleej_seed_urls: List[str] | None = None
+    wafa_seed_urls: List[str] | None = None
+    alwatanvoice_seed_urls: List[str] | None = None
 
     # Blob storage (M1.5) — document text lives here, not inline in Postgres.
     blob_backend: str = "local"  # "local" | "r2"
@@ -205,6 +216,39 @@ class Settings:
                         "https://aawsat.com/الاقتصاد"
                     ),
                 )
+            ),
+            almada_seed_urls=_split_csv(
+                os.getenv("ALMADA_SEED_URLS", "https://almadapaper.net"),
+            ),
+            alchourouk_seed_urls=_split_csv(
+                os.getenv("ALCHOUROUK_SEED_URLS", "https://www.alchourouk.com"),
+            ),
+            ammonnews_seed_urls=_split_csv(
+                os.getenv("AMMONNEWS_SEED_URLS", "https://www.ammonnews.net"),
+            ),
+            hespress_seed_urls=_split_csv(
+                os.getenv("HESPRESS_SEED_URLS", "https://www.hespress.com"),
+            ),
+            akhbarona_seed_urls=_split_csv(
+                os.getenv("AKHBARONA_SEED_URLS", "https://www.akhbarona.com"),
+            ),
+            alrai_seed_urls=_split_csv(
+                os.getenv("ALRAI_SEED_URLS", "https://www.alraimedia.com"),
+            ),
+            sudantribune_seed_urls=_split_csv(
+                os.getenv("SUDANTRIBUNE_SEED_URLS", "https://sudantribune.net"),
+            ),
+            almasdaronline_seed_urls=_split_csv(
+                os.getenv("ALMASDARONLINE_SEED_URLS", "https://almasdaronline.com"),
+            ),
+            akhbaralkhaleej_seed_urls=_split_csv(
+                os.getenv("AKHBARALKHALEEJ_SEED_URLS", "https://akhbar-alkhaleej.com"),
+            ),
+            wafa_seed_urls=_split_csv(
+                os.getenv("WAFA_SEED_URLS", "https://www.wafa.ps"),
+            ),
+            alwatanvoice_seed_urls=_split_csv(
+                os.getenv("ALWATANVOICE_SEED_URLS", "https://www.alwatanvoice.com/arabic"),
             ),
             blob_backend=os.getenv("BLOB_BACKEND", "local"),
             blob_local_root=os.getenv("BLOB_LOCAL_ROOT", "data/blobs"),
