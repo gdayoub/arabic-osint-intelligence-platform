@@ -28,6 +28,8 @@ from src.scraping.annahar_scraper import AnNaharScraper
 from src.scraping.base_scraper import BaseScraper
 from src.scraping.bbc_arabic_scraper import BBCArabicScraper
 from src.scraping.cnn_arabic_scraper import CNNArabicScraper
+from src.scraping.libyaalahrar_scraper import LibyaAlAhrarScraper
+from src.scraping.youm7_scraper import Youm7Scraper
 from src.store.blob import BlobStore, get_blob_store
 from src.store.database import get_core_session
 from src.store.documents import get_document_ref_by_url
@@ -50,6 +52,8 @@ def build_scrapers() -> list[BaseScraper]:
         CNNArabicScraper(settings=SETTINGS),
         AlArabiyaScraper(settings=SETTINGS),
         AnNaharScraper(settings=SETTINGS),
+        Youm7Scraper(settings=SETTINGS),
+        LibyaAlAhrarScraper(settings=SETTINGS),
     ]
 
 

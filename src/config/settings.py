@@ -48,6 +48,8 @@ class Settings:
     cnn_seed_urls: List[str] | None = None
     alarabiya_seed_urls: List[str] | None = None
     annahar_seed_urls: List[str] | None = None
+    youm7_seed_urls: List[str] | None = None
+    libyaalahrar_seed_urls: List[str] | None = None
 
     # Blob storage (M1.5) — document text lives here, not inline in Postgres.
     blob_backend: str = "local"  # "local" | "r2"
@@ -150,6 +152,27 @@ class Settings:
                     # the real, always-fresh, static-HTTP feed (see
                     # src/scraping/annahar_scraper.py for the verification).
                     "https://www.annahar.com/sitemap/sitemap-news.xml",
+                )
+            ),
+            youm7_seed_urls=_split_csv(
+                os.getenv(
+                    "YOUM7_SEED_URLS",
+                    (
+                        "https://www.youm7.com/Section/أخبار-عاجلة/65/1,"
+                        "https://www.youm7.com/Section/أخبار-عالمية/286/1,"
+                        "https://www.youm7.com/Section/أخبار-عربية/88/1,"
+                        "https://www.youm7.com/Section/اقتصاد-وبورصة/297/1"
+                    ),
+                )
+            ),
+            libyaalahrar_seed_urls=_split_csv(
+                os.getenv(
+                    "LIBYAALAHRAR_SEED_URLS",
+                    (
+                        "https://libyaalahrar.tv/category/libya/,"
+                        "https://libyaalahrar.tv/category/world/,"
+                        "https://libyaalahrar.tv/category/eco/"
+                    ),
                 )
             ),
             blob_backend=os.getenv("BLOB_BACKEND", "local"),
