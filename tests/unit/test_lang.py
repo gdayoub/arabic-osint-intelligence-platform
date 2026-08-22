@@ -216,3 +216,29 @@ def test_unknown_names_fall_back_to_letter_mapping():
 def test_romanize_deduplicates():
     out = ar.romanize("محمد محمد")
     assert len(out) == len(set(out))
+
+
+def test_romanize_generates_multiple_candidates_for_ambiguous_consonants():
+    # قطر has one letter (ق) with two common renderings; short vowels are
+    # never written in the script so these keys stay vowel-less on purpose
+    # (see the module docstring: comparison keys, not display spellings).
+    out = ar.romanize("قطر")
+    assert "qtr" in out
+    assert "ktr" in out
+    assert len(out) >= 2
+
+
+def test_romanize_combines_multi_word_names():
+    # both tokens are known lookups (الأحمد strips its article down to
+    # احمد), and the combined candidates should cross the two, not just
+    # vary the first word.
+    out = ar.romanize("محمد الأحمد")
+    assert "mohammed ahmed" in out
+    assert "muhammad ahmad" in out
+
+
+def test_romanize_caps_candidate_count():
+    # a name packed with several ambiguous letters must not explode past the
+    # search-key budget.
+    out = ar.romanize("عبدالغفار الذعذاع")
+    assert 0 < len(out) <= 12

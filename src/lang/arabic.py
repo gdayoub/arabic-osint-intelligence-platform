@@ -9,6 +9,7 @@ stored text. see the note in base.py for why that matters.
 
 from __future__ import annotations
 
+import itertools
 import re
 import unicodedata
 
@@ -82,17 +83,26 @@ _ARABIC_BLOCK = re.compile(r"[؀-ۿ]")
 _ARABIC_SENTENCE_MARKS = frozenset(".!؟!…")
 _ARABIC_TITLE_ABBREVIATIONS = frozenset({"د", "أ", "م", "ص", "ج"})
 
-# rough letter to latin map. one option each so i get a base spelling and then
-# i vary the vowels after. this is deliberately basic. M5 is where romanization
-# gets done properly with real candidate generation.
-_ROMAN = {
-    "ا": "a", "ب": "b", "ت": "t", "ث": "th", "ج": "j",
-    "ح": "h", "خ": "kh", "د": "d", "ذ": "dh", "ر": "r",
-    "ز": "z", "س": "s", "ش": "sh", "ص": "s", "ض": "d",
-    "ط": "t", "ظ": "z", "ع": "a", "غ": "gh", "ف": "f",
-    "ق": "q", "ك": "k", "ل": "l", "م": "m", "ن": "n",
-    "ه": "h", "و": "w", "ي": "y",
+# M5 candidate generation. most letters render one way in practice, but a
+# handful genuinely split the way people type them (خالد comes out "khaled"
+# from one person and "khalid" from another purely on vowel guess; qatar vs
+# katar is the same story on the consonant side). letters with more than one
+# entry here are exactly the ones where two spellings of the same person's
+# name are common enough to matter for search -- everything single-valued is
+# a letter nobody spells a second way.
+_ROMAN_VARIANTS: dict[str, list[str]] = {
+    "ا": ["a"], "ب": ["b"], "ت": ["t"], "ث": ["th", "s"], "ج": ["j", "g"],
+    "ح": ["h"], "خ": ["kh"], "د": ["d"], "ذ": ["dh", "z"], "ر": ["r"],
+    "ز": ["z"], "س": ["s"], "ش": ["sh"], "ص": ["s"], "ض": ["d", "dh"],
+    "ط": ["t"], "ظ": ["z", "dh"], "ع": ["a", "'"], "غ": ["gh", "g"], "ف": ["f"],
+    "ق": ["q", "k"], "ك": ["k"], "ل": ["l"], "م": ["m"], "ن": ["n"],
+    "ه": ["h"], "و": ["w"], "ي": ["y"],
 }
+
+# candidates multiply fast once several ambiguous letters land in one name;
+# this is a search-key budget, not a claim that only 12 spellings exist.
+_MAX_TOKEN_CANDIDATES = 12
+_MAX_NAME_CANDIDATES = 12
 
 # names that everyone spells a bunch of different ways in english. a lookup is
 # honest here because these are the ones that actually matter and guessing
@@ -109,6 +119,26 @@ _KNOWN_ROMANIZATIONS = {
     "خالد": ["khaled", "khalid"],
     "عمر": ["omar", "umar"],
 }
+
+
+def _romanize_token(bare: str) -> list[str]:
+    """cross the per-letter variant lists for one token, capped and deduped.
+
+    an unmapped character (digits, latin letters already in the text) passes
+    through unchanged as its own single-option list so it doesn't multiply
+    anything.
+    """
+    letter_options = [_ROMAN_VARIANTS.get(ch, [ch]) for ch in bare]
+    if not letter_options:
+        return [""]
+
+    candidates: list[str] = []
+    for combo in itertools.islice(
+        itertools.product(*letter_options), _MAX_TOKEN_CANDIDATES
+    ):
+        candidates.append("".join(combo))
+
+    return list(dict.fromkeys(candidates))
 
 
 class ArabicAdapter:
@@ -260,23 +290,39 @@ class ArabicAdapter:
         """latin spellings someone might reasonably write.
 
         i check the known list first because the common names are exactly the
-        ones where letter by letter guessing gives you something nobody writes.
+        ones where letter by letter guessing gives you something nobody
+        writes. for everything else i cross the per-letter variant options
+        (see _ROMAN_VARIANTS) to get more than one candidate per token, then
+        cross the tokens together so a full name like "محمد الأحمد" produces
+        combined candidates like "mohammed al-ahmad" and "muhammad al-ahmad",
+        not just the first token varying on its own.
         """
         normalized = self.normalize(text)
         if not normalized:
             return []
 
-        out: list[str] = []
+        per_token_candidates: list[list[str]] = []
         for token in normalized.split():
             bare = self.strip_article(token)
             if bare in _KNOWN_ROMANIZATIONS:
-                out.extend(_KNOWN_ROMANIZATIONS[bare])
+                per_token_candidates.append(list(_KNOWN_ROMANIZATIONS[bare]))
             else:
-                out.append("".join(_ROMAN.get(ch, ch) for ch in bare))
+                per_token_candidates.append(_romanize_token(bare))
+
+        if not per_token_candidates:
+            return []
+
+        names: list[str] = []
+        for combo in itertools.islice(
+            itertools.product(*per_token_candidates), _MAX_NAME_CANDIDATES
+        ):
+            name = " ".join(part for part in combo if part)
+            if name:
+                names.append(name)
 
         # dict.fromkeys keeps the first occurrence and drops later duplicates
         # and unlike set() it does not scramble the order
-        return list(dict.fromkeys(candidate for candidate in out if candidate))
+        return list(dict.fromkeys(names))
 
     def segment_sentences(self, text: str) -> list[TextSpan]:
         """return exact original-text sentences using Arabic punctuation."""
