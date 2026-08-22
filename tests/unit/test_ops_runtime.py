@@ -730,7 +730,6 @@ def test_core_component_versions_are_static_and_translation_mode_specific():
 
     assert {
         "aljazeera_scraper",
-        "alarabiya_scraper",
         "bbc_arabic_scraper",
         "cnn_arabic_scraper",
         "rule_based_document_classifier",

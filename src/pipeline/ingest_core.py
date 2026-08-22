@@ -24,7 +24,6 @@ from src.database.crud import canonicalize_url, compute_content_hash
 from src.ops.events import PipelineReasonCode
 from src.scraping.akhbaralkhaleej_scraper import AkhbarAlKhaleejScraper
 from src.scraping.akhbarona_scraper import AkhbaronaScraper
-from src.scraping.alarabiya_scraper import AlArabiyaScraper
 from src.scraping.alchourouk_scraper import AlChouroukScraper
 from src.scraping.aljazeera_scraper import AlJazeeraScraper
 from src.scraping.almada_scraper import AlMadaScraper
@@ -65,7 +64,6 @@ def build_scrapers() -> list[BaseScraper]:
         AlJazeeraScraper(settings=SETTINGS),
         BBCArabicScraper(settings=SETTINGS),
         CNNArabicScraper(settings=SETTINGS),
-        AlArabiyaScraper(settings=SETTINGS),
         AnNaharScraper(settings=SETTINGS),
         Youm7Scraper(settings=SETTINGS),
         LibyaAlAhrarScraper(settings=SETTINGS),

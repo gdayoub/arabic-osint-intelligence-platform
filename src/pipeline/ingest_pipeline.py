@@ -10,7 +10,6 @@ from pathlib import Path
 from src.config.settings import SETTINGS
 from src.database.crud import create_raw_article, get_raw_by_hash, get_raw_by_url
 from src.database.db import get_db_session
-from src.scraping.alarabiya_scraper import AlArabiyaScraper
 from src.scraping.aljazeera_scraper import AlJazeeraScraper
 from src.scraping.bbc_arabic_scraper import BBCArabicScraper
 from src.scraping.cnn_arabic_scraper import CNNArabicScraper
@@ -23,7 +22,6 @@ def build_scrapers():
         AlJazeeraScraper(settings=SETTINGS),
         BBCArabicScraper(settings=SETTINGS),
         CNNArabicScraper(settings=SETTINGS),
-        AlArabiyaScraper(settings=SETTINGS),
     ]
 
 
