@@ -47,6 +47,7 @@ class Settings:
     bbc_seed_urls: List[str] | None = None
     cnn_seed_urls: List[str] | None = None
     alarabiya_seed_urls: List[str] | None = None
+    annahar_seed_urls: List[str] | None = None
 
     # Blob storage (M1.5) — document text lives here, not inline in Postgres.
     blob_backend: str = "local"  # "local" | "r2"
@@ -139,6 +140,16 @@ class Settings:
                         "https://www.alarabiya.net/politics,"
                         "https://www.alarabiya.net/economy"
                     ),
+                )
+            ),
+            annahar_seed_urls=_split_csv(
+                os.getenv(
+                    "ANNAHAR_SEED_URLS",
+                    # An-Nahar's category pages are client-rendered and carry
+                    # no article links in static HTML; the news sitemap is
+                    # the real, always-fresh, static-HTTP feed (see
+                    # src/scraping/annahar_scraper.py for the verification).
+                    "https://www.annahar.com/sitemap/sitemap-news.xml",
                 )
             ),
             blob_backend=os.getenv("BLOB_BACKEND", "local"),
