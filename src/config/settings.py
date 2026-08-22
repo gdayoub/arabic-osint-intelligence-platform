@@ -53,6 +53,7 @@ class Settings:
     alkhaleej_seed_urls: List[str] | None = None
     almasryalyoum_seed_urls: List[str] | None = None
     sana_seed_urls: List[str] | None = None
+    aawsat_seed_urls: List[str] | None = None
 
     # Blob storage (M1.5) — document text lives here, not inline in Postgres.
     blob_backend: str = "local"  # "local" | "r2"
@@ -191,6 +192,17 @@ class Settings:
                         "https://sana.sy/syria-news/,"
                         "https://sana.sy/international/,"
                         "https://sana.sy/economy/"
+                    ),
+                )
+            ),
+            aawsat_seed_urls=_split_csv(
+                os.getenv(
+                    "AAWSAT_SEED_URLS",
+                    (
+                        "https://aawsat.com/العالم,"
+                        "https://aawsat.com/العالم-العربي,"
+                        "https://aawsat.com/الشرق-الأوسط,"
+                        "https://aawsat.com/الاقتصاد"
                     ),
                 )
             ),
