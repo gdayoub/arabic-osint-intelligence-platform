@@ -112,14 +112,19 @@ draws it more strictly still for backfill, which has no deployment step to
 draw the line at in the first place.
 
 `pipeline.yml`'s `workflow_dispatch` also gained `pipeline_mode` and
-`limit_per_source` inputs so a human can dispatch that workflow with
-`pipeline_mode: backfill` for a quick one-off larger run without invoking
-`backfill.yml` at all — but the cron `schedule:` trigger has no `inputs`
-context, so the run step's `EVENT_NAME` check forces `pipeline_mode=scheduled`
-and passes no `--limit-per-source` override whenever `github.event_name !=
-'workflow_dispatch'`. A cron firing can never read a stored `backfill`
-default or a stale manually-set input value; it does not have a value to
-read at all.
+`limit_per_source` inputs, but `pipeline_mode` is a `choice` input whose
+`options:` list contains only `"scheduled"` — `backfill` is not a selectable
+value there at all, because that workflow ends in an unconditional
+`cp src/api/static/*.html` + `cloudflare/wrangler-action` deploy with no
+`if:` guard on `pipeline_mode`. A choice input restricted to one option, plus
+the run step hardcoding `--pipeline-mode scheduled` as a literal rather than
+reading `inputs.pipeline_mode` at all, means there is no value anywhere in
+that workflow's dispatch form that reaches the deploy step as a backfill run
+— not merely a default that steers away from one. `limit_per_source` is still
+exposed there, but only as a cap override for an explicitly-still-scheduled,
+explicitly-still-published run; the input's own description says as much.
+The cron `schedule:` trigger has no `inputs` context in the first place, so a
+cron firing never reads either input regardless.
 
 ## Consequences
 
@@ -127,10 +132,10 @@ read at all.
   (`ingest.pipeline_mode=scheduled`, `ingest.limit_per_source=24`) instead of
   an implicit `SETTINGS.max_articles_per_source` read with no record of what
   ran.
-- A human who needs more than 24 articles/source has two sanctioned paths —
-  dispatching `pipeline.yml` with `pipeline_mode: backfill`, or running
-  `backfill.yml` directly for a larger, longer, and explicitly
-  non-publishing run — and cannot reach either one from the cron trigger.
+- A human who needs more than 24 articles/source has exactly one sanctioned
+  path — `backfill.yml`, a larger, longer, and explicitly non-publishing
+  run — and cannot reach it, nor anything resembling it, through
+  `pipeline.yml` or the cron trigger.
 - `resolve_limit_per_source` is the only place "positive integer, defaulted
   by mode" is checked; the CLI, the ledgered runtime, and direct
   `run_core_ingestion` callers all route through it (or its thin

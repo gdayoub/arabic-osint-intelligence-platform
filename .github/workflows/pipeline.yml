@@ -14,23 +14,26 @@ on:
         default: "0.15"
       pipeline_mode:
         description: >-
-          scheduled keeps the 24-article/source cap this workflow always
-          uses on its cron trigger. backfill raises the default to 120 for
-          one manually dispatched catch-up run — prefer backfill.yml
-          instead for a real bulk backfill (see docs/adr/0032). Ignored on
-          the cron trigger: a scheduled run is always pipeline_mode=scheduled
-          regardless of this input's stored default.
+          This workflow only ever runs pipeline_mode=scheduled -- it ends in
+          an unconditional public Cloudflare deploy, so it must never carry a
+          larger, unreviewed backfill scrape to that deploy step (see
+          docs/adr/0032). "backfill" is deliberately not an option here: use
+          backfill.yml for a real bulk backfill, which has no deploy step to
+          guard in the first place. This input exists only so the cap
+          override below is explicit and so the choice type documents, in
+          the dispatch form itself, why backfill is not selectable.
         required: false
         default: "scheduled"
         type: choice
         options:
           - scheduled
-          - backfill
       limit_per_source:
         description: >-
           Override the per-source article cap for this one manually
-          dispatched run. Leave blank to use pipeline_mode's default (24
-          scheduled / 120 backfill). Ignored on the cron trigger.
+          dispatched scheduled run. Leave blank to use the scheduled default
+          of 24. Ignored on the cron trigger. This still deploys at the end
+          of this workflow, so do not use it to sneak a backfill-sized scrape
+          through -- use backfill.yml instead.
         required: false
         default: ""
 
@@ -84,17 +87,23 @@ jobs:
       # Missing DeepL skips translation. A configured provider runs in
       # best-effort mode: a provider failure finishes the ledgered run as
       # degraded after baking the still-usable Arabic snapshot.
-      # pipeline_mode/limit_per_source are only ever read on a manual
-      # workflow_dispatch (EVENT_NAME check below) -- the cron `schedule`
-      # trigger has no `inputs` context at all, so a cron run always resolves
-      # to scheduled/24 no matter what default is stored on this workflow's
-      # dispatch form.  Values flow through env vars, not direct expression
-      # interpolation into the shell script, to keep the invocation safe.
+      #
+      # --pipeline-mode is hardcoded to scheduled, unconditionally, on every
+      # trigger of this workflow (cron and manual dispatch alike): the
+      # dispatch form's pipeline_mode input only ever offers "scheduled" (see
+      # its `options:` above), so there is no input value that could change
+      # this. This workflow ends in an unconditional public Cloudflare
+      # deploy below -- it must never run a larger, unreviewed backfill scrape
+      # and then publish it (see docs/adr/0032; use backfill.yml for a real
+      # backfill, which has no deploy step to guard). limit_per_source is
+      # still an explicit override for a one-off larger *scheduled* run, and
+      # is read from inputs via an env var (never interpolated directly into
+      # the shell) only on a manual dispatch; the cron `schedule` trigger has
+      # no `inputs` context at all, so a cron run always passes no override.
       - name: Run ledgered core pipeline
         env:
           REVIEW_MARGIN: ${{ inputs.review_margin || '0.15' }}
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_PIPELINE_MODE: ${{ inputs.pipeline_mode }}
           INPUT_LIMIT_PER_SOURCE: ${{ inputs.limit_per_source }}
         run: |
           translation_mode=skip
@@ -102,13 +111,9 @@ jobs:
             translation_mode=best-effort
           fi
 
-          pipeline_mode=scheduled
           limit_args=()
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            pipeline_mode="${INPUT_PIPELINE_MODE:-scheduled}"
-            if [ -n "${INPUT_LIMIT_PER_SOURCE:-}" ]; then
-              limit_args=(--limit-per-source "$INPUT_LIMIT_PER_SOURCE")
-            fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "${INPUT_LIMIT_PER_SOURCE:-}" ]; then
+            limit_args=(--limit-per-source "$INPUT_LIMIT_PER_SOURCE")
           fi
 
           python main.py run-core-pipeline \
@@ -116,7 +121,7 @@ jobs:
             --commit-sha "${{ github.sha }}" \
             --translation-mode "$translation_mode" \
             --review-margin "$REVIEW_MARGIN" \
-            --pipeline-mode "$pipeline_mode" \
+            --pipeline-mode scheduled \
             "${limit_args[@]}" \
             --out dist/data.json
 
