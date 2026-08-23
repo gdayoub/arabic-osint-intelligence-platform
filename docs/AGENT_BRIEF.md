@@ -47,6 +47,14 @@ Text search finds documents. This finds *things*, which lets you ask questions t
 
 ## 2. Current state
 
+**This section describes the state before M1 was built and is stale as a
+status claim** — M1 through M4 are done and M5 is in progress (see
+`AGENTS.md`'s "what is done" section and `READTHIS.md` for the verified
+current milestone status, source count, and test count; those move often
+enough that this brief does not try to track them). It is left below
+unedited as the original starting-point description this document was
+written against; do not read it as "what currently exists."
+
 - A working Python scraper producing Arabic documents
 - Postgres for storage (schema needs redesign — currently document-centric)
 - A `Mention` dataclass with `doc_id`, `text`, `start`, `end`

@@ -206,3 +206,29 @@ does not earn its keep until it handles names the gazetteer does not know,
 and that needs a training set drawn from blocking-surviving pairs rather
 than the arbitrary name pairs it was fit on. 17 of 24 current negatives
 never survive blocking, so the model was graded on an exam it never sits.
+
+## 2026-08-23 — Intelligence Atlas Task 1: baseline coverage snapshot
+
+**Method:** live `GET` of `https://arabic-osint-dashboard.georgedayoub500.workers.dev/data.json`
+(with the portfolio `Origin` header) at `generated_at=2026-08-22T04:39:23Z`,
+compared against `src.ops.runtime.configured_ingest_source_names()` (21
+sources, read from `src/pipeline/ingest_core.py::build_scrapers()`). Full
+detail in `benchmarks/intelligence_atlas_baseline.md`.
+
+| metric | value |
+|---|---|
+| configured sources | 21 |
+| sources represented in the public snapshot | 3 (AlJazeeraArabic 422, BBCArabic 153, CNNArabic 137) |
+| `stats.total_raw` / `stats.total_processed` | 712 / 712 |
+| `tests/unit` | 471 passed, 1 skipped, 2 xfailed |
+
+**Not a regression — a starting measurement.** This is the first time
+"configured" and "publicly represented" have been recorded as two separate
+numbers rather than one coverage claim. 18 of 21 sources added across prior
+sessions have zero documents in the current public artifact; whether that
+means they were never scheduled to run since being added, or ran and
+silently failed, is exactly what Tranche A Tasks 2-6 (explicit
+scheduled/backfill modes, per-source checkpoints and budgets, a proven
+full-job time budget, then a real 21-source production checkpoint) exist to
+determine and fix. This entry exists so that whatever number those tasks
+report later has something concrete to be compared against.
