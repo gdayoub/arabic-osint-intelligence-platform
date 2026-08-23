@@ -322,7 +322,10 @@ def test_postgres_stable_entity_history_trigger_rejects_update_and_delete():
                             "'trg_stable_entity_snapshots_append_only', "
                             "'trg_stable_entity_memberships_append_only', "
                             "'trg_stable_entity_lineage_append_only', "
-                            "'trg_stable_entity_lineage_evidence_append_only')"
+                            "'trg_stable_entity_lineage_evidence_append_only', "
+                            "'trg_translation_artifacts_append_only', "
+                            "'trg_translation_uses_append_only', "
+                            "'trg_stable_entity_variants_append_only')"
                         )
                     )
                 )
@@ -333,6 +336,63 @@ def test_postgres_stable_entity_history_trigger_rejects_update_and_delete():
                     "stable_entity_memberships",
                     "stable_entity_lineage",
                     "stable_entity_lineage_evidence",
+                    "translation_artifacts",
+                    "translation_uses",
+                    "stable_entity_variants",
                 } <= trigger_tables
+        finally:
+            engine.dispose()
+
+
+@pytest.mark.skipif(
+    "translation_artifacts" not in CoreBase.metadata.tables,
+    reason="the bilingual derived-data revision is not present in this checkout",
+)
+def test_postgres_translation_artifact_trigger_rejects_update_and_delete():
+    """Migration 0006's tables reuse 0005's generic trigger function.  This
+    proves the reused function actually rejects mutations when attached to a
+    brand-new table, not only when attached to the six tables it was
+    originally written for."""
+    with _disposable_database() as database_url:
+        command.upgrade(make_alembic_config(database_url=database_url), "head")
+        engine = create_engine(database_url)
+
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO translation_artifacts "
+                        "(source_text_sha256, source_lang, target_lang, provider, "
+                        "provider_version, settings_sha256, output_text, created_at) "
+                        "VALUES ('deadbeef', 'ar', 'en', 'deepl', '2.0', 'empty', "
+                        "'hello', CURRENT_TIMESTAMP)"
+                    )
+                )
+
+                with pytest.raises(DBAPIError, match="append-only"):
+                    with connection.begin_nested():
+                        connection.execute(
+                            text(
+                                "UPDATE translation_artifacts SET output_text = 'goodbye' "
+                                "WHERE source_text_sha256 = 'deadbeef'"
+                            )
+                        )
+
+                with pytest.raises(DBAPIError, match="append-only"):
+                    with connection.begin_nested():
+                        connection.execute(
+                            text(
+                                "DELETE FROM translation_artifacts "
+                                "WHERE source_text_sha256 = 'deadbeef'"
+                            )
+                        )
+
+                value = connection.scalar(
+                    text(
+                        "SELECT output_text FROM translation_artifacts "
+                        "WHERE source_text_sha256 = 'deadbeef'"
+                    )
+                )
+                assert value == "hello"
         finally:
             engine.dispose()

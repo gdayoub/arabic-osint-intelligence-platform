@@ -46,6 +46,7 @@ from src.store.orm import (
     StableEntityMembershipORM,
     StableEntityORM,
     StableEntityResolutionStateORM,
+    StableEntitySnapshotORM,
     StableEntityVariantORM,
     TranslationArtifactORM,
     TranslationUseORM,
@@ -216,6 +217,21 @@ def record_translation_use(
     return row
 
 
+def _membership_stable_entity_id(session: Session, membership: StableEntityMembershipORM) -> int | None:
+    """The stable entity id the membership's own snapshot actually belongs to.
+
+    ``StableEntityMembershipORM`` carries ``snapshot_id``/``generation_id``
+    but not a denormalized ``stable_entity_id`` of its own, so the only
+    truthful way to answer "whose membership is this" is to look at the
+    snapshot it was written under.
+    """
+    return session.scalar(
+        select(StableEntitySnapshotORM.stable_entity_id).where(
+            StableEntitySnapshotORM.id == membership.snapshot_id
+        )
+    )
+
+
 def _add_variant(
     session: Session,
     *,
@@ -231,6 +247,14 @@ def _add_variant(
         )
     _require_non_empty(surface_text, "surface_text")
     _require_non_empty(language, "language")
+
+    membership_stable_entity_id = _membership_stable_entity_id(session, membership)
+    if membership_stable_entity_id != stable_entity.id:
+        raise BilingualInvariantError(
+            f"membership {membership.id} belongs to stable entity "
+            f"{membership_stable_entity_id}, not {stable_entity.id}; a variant "
+            "cannot be attributed to a stable entity its membership doesn't witness"
+        )
 
     existing = session.scalar(
         select(StableEntityVariantORM).where(
@@ -356,4 +380,44 @@ def active_variants(
     )
     if variant_type is not None:
         stmt = stmt.where(StableEntityVariantORM.variant_type == variant_type)
+    return list(session.scalars(stmt).all())
+
+
+def active_translation_uses(
+    session: Session,
+    stable_entity_id: int,
+) -> list[TranslationUseORM]:
+    """Translation uses anchored to a stable entity's currently active membership.
+
+    Mirrors ``active_variants()``: a use whose ``source_membership_id``
+    belongs to a generation the resolution-state pointer has moved past is
+    excluded here, though the row itself is never deleted -- append-only
+    history survives (Global Constraint 7).
+
+    This is deliberately scoped to uses anchored to a stable entity via a
+    membership.  A use with no membership at all (a pure evidence-span
+    translation -- e.g. a document title -- never claimed to come from any
+    stable entity) has no generation to retract from and is not part of
+    this view; it is a permanent fact about an evidence span, not something
+    that can go stale when a resolver generation advances.  See ADR 0031.
+    """
+    state = session.get(StableEntityResolutionStateORM, 1)
+    if state is None or state.active_generation_id is None:
+        return []
+
+    stmt = (
+        select(TranslationUseORM)
+        .join(
+            StableEntityMembershipORM,
+            TranslationUseORM.source_membership_id == StableEntityMembershipORM.id,
+        )
+        .join(
+            StableEntitySnapshotORM,
+            StableEntitySnapshotORM.id == StableEntityMembershipORM.snapshot_id,
+        )
+        .where(
+            StableEntitySnapshotORM.stable_entity_id == stable_entity_id,
+            StableEntityMembershipORM.generation_id == state.active_generation_id,
+        )
+    )
     return list(session.scalars(stmt).all())

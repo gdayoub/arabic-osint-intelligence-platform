@@ -74,6 +74,17 @@ created):
   membership belongs to a superseded generation stops appearing as current
   without ever being deleted or rewritten.
 
+  The composite foreign key only ties the membership to the evidence
+  identity it witnesses — it cannot also express "and this membership
+  belongs to *this* stable entity," because `stable_entity_id` isn't part
+  of that key. `_add_variant()` therefore checks this explicitly in Python
+  (`_membership_stable_entity_id()` looks up the membership's own snapshot
+  and compares its `stable_entity_id` to the one the caller supplied)
+  before writing, and raises `BilingualInvariantError` on a mismatch. This
+  is a repository-layer invariant, not an additional database constraint —
+  see `test_variant_rejects_a_membership_from_a_different_stable_entity` for
+  the case it exists to catch.
+
 `src/store/bilingual.py` is the only write/read surface: `get_or_create_*`
 functions make content-addressed writes idempotent, `record_translation_use`
 and `_add_variant` re-check the membership/evidence pairing in Python before
@@ -82,6 +93,21 @@ the DB constraint would reject it (a clear domain error instead of a raw
 `ArabicAdapter.romanize()` directly — it never creates a
 `TranslationArtifact`, keeping romanization and translation
 distinguishable by construction, not just by convention.
+
+### Retracted-membership exclusion applies asymmetrically, on purpose
+
+`active_variants()` filters by `active_generation_id`, and
+`active_translation_uses()` (scoped by `stable_entity_id`) mirrors it
+exactly for membership-anchored uses. But a `TranslationUse` with no
+membership at all — a use anchored only to `evidence_identity_id`, e.g. a
+translated document title that was never claimed to come from any stable
+entity — has no generation to retract from and is deliberately excluded
+from that filtering entirely: it is a permanent fact about an evidence
+span, not a claim about a stable entity's current state, so there is
+nothing for a resolver generation advancing to invalidate. This is a
+considered asymmetry, not an oversight: `StableEntityVariant` always names
+a stable entity (so it always has a generation to go stale against);
+`TranslationUse` sometimes doesn't.
 
 ## Alternatives considered
 
@@ -118,7 +144,11 @@ distinguishable by construction, not just by convention.
   enforced `variant_type` split within `StableEntityVariant`), not only in
   code comments.
 - A translation use or a stable-entity variant can never be attributed to
-  the wrong resolver generation or the wrong evidence span — enforced by
-  the database, not only by application code.
+  the wrong evidence span, or (for a use) the wrong membership generation —
+  enforced by the database's composite foreign key, not only by
+  application code. A variant additionally can never be attributed to a
+  stable entity its membership doesn't actually belong to — enforced by
+  `_add_variant()`'s explicit repository-layer check, since the FK alone
+  cannot express that constraint.
 - 0006 remains the single Alembic head, so Task 4's first Tranche B runtime
   migration (0007) has exactly one place to attach to.

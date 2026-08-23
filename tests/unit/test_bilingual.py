@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from src.resolve.stable_entities import observe_live_entity_generation
 from src.store.bilingual import (
     BilingualInvariantError,
+    active_translation_uses,
     active_variants,
     add_verified_alias_variant,
     get_or_create_translation_artifact,
@@ -220,6 +221,80 @@ def test_retracted_membership_excludes_variant_from_active_view(session, ontolog
     assert session.get(StableEntityVariantORM, variant.id) is not None
 
 
+def test_retracted_membership_excludes_translation_use_from_active_view(
+    session, ontology, blob_store
+):  # noqa: ANN001
+    """active_translation_uses() mirrors active_variants() for TranslationUse."""
+    mentions = _mentions(session, ontology, blob_store, ["أحمد"])
+    resolver = _resolver_version(session)
+    legacy = _legacy_entity(session, mentions, "أحمد", resolver=resolver)
+    first_generation = _observe(session, resolver)
+    stable_entity, membership = _membership_for(
+        session, first_generation.generation_id, legacy.id
+    )
+
+    artifact = get_or_create_translation_artifact(
+        session,
+        source_text="أحمد",
+        source_lang="ar",
+        target_lang="en",
+        provider="deepl",
+        provider_version="2.0",
+        output_text="Ahmad",
+    )
+    use = record_translation_use(
+        session,
+        artifact=artifact,
+        evidence_identity_id=membership.evidence_identity_id,
+        membership=membership,
+    )
+    assert active_translation_uses(session, stable_entity.id) == [use]
+
+    legacy.retracted = True
+    session.flush()
+    _observe(session, resolver)
+
+    assert active_translation_uses(session, stable_entity.id) == []
+    # The row itself is never deleted -- append-only history survives.
+    assert session.get(TranslationUseORM, use.id) is not None
+
+
+def test_evidence_only_translation_use_has_no_generation_to_retract_from(
+    session, ontology, blob_store
+):  # noqa: ANN001
+    """A use with no membership at all is a permanent evidence-span fact,
+    not a claim about a stable entity, so it is out of scope for
+    active_translation_uses() (which is scoped by stable_entity_id) and is
+    never excluded the way a membership-anchored use can be."""
+    mentions = _mentions(session, ontology, blob_store, ["أحمد"])
+    resolver = _resolver_version(session)
+    legacy = _legacy_entity(session, mentions, "أحمد", resolver=resolver)
+    generation = _observe(session, resolver)
+    _, membership = _membership_for(session, generation.generation_id, legacy.id)
+
+    artifact = get_or_create_translation_artifact(
+        session,
+        source_text="أحمد",
+        source_lang="ar",
+        target_lang="en",
+        provider="deepl",
+        provider_version="2.0",
+        output_text="Ahmad",
+    )
+    use = record_translation_use(
+        session,
+        artifact=artifact,
+        evidence_identity_id=membership.evidence_identity_id,
+    )
+    assert use.source_membership_id is None
+    # Retracting the entity doesn't touch this use -- it never claimed to
+    # be anchored to a stable entity in the first place.
+    legacy.retracted = True
+    session.flush()
+    _observe(session, resolver)
+    assert session.get(TranslationUseORM, use.id) is not None
+
+
 # ---------------------------------------------------------------------------
 # 3. Invalid cross-generation use
 # ---------------------------------------------------------------------------
@@ -278,6 +353,28 @@ def test_database_rejects_a_hand_written_cross_generation_translation_use(
     with pytest.raises(IntegrityError):
         session.flush()
     session.rollback()
+
+
+def test_variant_rejects_a_membership_from_a_different_stable_entity(
+    session, ontology, blob_store
+):  # noqa: ANN001
+    """A variant's membership/evidence pair can satisfy the composite FK
+    while still belonging to the wrong stable entity -- the FK only proves
+    membership<->evidence, not membership<->stable_entity. _add_variant()
+    must catch that mismatch itself."""
+    (first_entity, _), (_, second_membership), _ = _build_two_entities(
+        session, ontology, blob_store
+    )
+
+    with pytest.raises(BilingualInvariantError, match="belongs to stable entity"):
+        add_verified_alias_variant(
+            session,
+            stable_entity=first_entity,
+            membership=second_membership,
+            surface_text="Mohammed",
+            language="en",
+        )
+    assert session.scalars(select(StableEntityVariantORM)).all() == []
 
 
 # ---------------------------------------------------------------------------

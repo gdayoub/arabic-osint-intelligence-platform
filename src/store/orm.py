@@ -716,8 +716,11 @@ class StableEntityVariantORM(CoreBase):
     ``source_membership_id``/``evidence_identity_id`` follow the same
     composite-foreign-key pattern as ``StableEntityLineageEvidenceORM``: the
     variant must be anchored to a membership that actually witnesses the
-    named evidence identity, so it can never be attributed to a generation
-    or entity other than the one that produced its surface text.
+    named evidence identity, so it can never be attributed to the wrong
+    generation's evidence. That FK cannot also prove the membership belongs
+    to ``stable_entity_id`` -- ``stable_entity_id`` isn't part of the key --
+    so ``src.store.bilingual._add_variant()`` checks that pairing itself in
+    Python before writing. See docs/adr/0031-private-bilingual-derived-data-foundation.md.
     """
 
     __tablename__ = "stable_entity_variants"
