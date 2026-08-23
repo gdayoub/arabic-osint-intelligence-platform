@@ -118,7 +118,7 @@ def test_0004_upgrades_to_0005_stable_entity_generations_without_rebuilding_iden
             assert "stable_entities" not in before
             assert "evidence_identities" in before
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0005_stable_entity_generations")
 
         with engine.connect() as connection:
             assert current_revisions(connection) == ("0005_stable_entity_generations",)
@@ -133,6 +133,37 @@ def test_0004_upgrades_to_0005_stable_entity_generations_without_rebuilding_iden
                 "stable_entity_lineage_evidence",
             } <= after
             assert "evidence_identities" in after
+            assert "translation_artifacts" not in after
+    finally:
+        engine.dispose()
+
+
+def test_0005_upgrades_to_0006_bilingual_derived_data_without_rebuilding_stable_entity_tables(
+    tmp_path,  # noqa: ANN001
+):
+    database_url = _sqlite_url(tmp_path, "0005-to-0006.sqlite")
+    config = make_alembic_config(database_url=database_url)
+    command.upgrade(config, "0005_stable_entity_generations")
+    engine = create_engine(database_url)
+
+    try:
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0005_stable_entity_generations",)
+            before = set(inspect(connection).get_table_names())
+            assert "translation_artifacts" not in before
+            assert "stable_entities" in before
+
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0006_bilingual_derived_data",)
+            after = set(inspect(connection).get_table_names())
+            assert {
+                "translation_artifacts",
+                "translation_uses",
+                "stable_entity_variants",
+            } <= after
+            assert "stable_entities" in after
             assert audit_head_schema(connection) == []
     finally:
         engine.dispose()

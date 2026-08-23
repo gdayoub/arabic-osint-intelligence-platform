@@ -7,18 +7,18 @@ on:
         description: 'Exact production revision before apply'
         required: true
         type: string
-        default: '0004_evidence_identity'
+        default: '0005_stable_entity_generations'
       expected_target:
         description: 'Exact repository head to apply'
         required: true
         type: string
-        default: '0005_stable_entity_generations'
+        default: '0006_bilingual_derived_data'
       recovery_reference:
         description: 'Prepared Neon branch, PITR point, or recovery ticket'
         required: true
         type: string
       confirmation:
-        description: 'Type: UPGRADE 0004_evidence_identity TO 0005_stable_entity_generations'
+        description: 'Type: UPGRADE 0005_stable_entity_generations TO 0006_bilingual_derived_data'
         required: true
         type: string
 

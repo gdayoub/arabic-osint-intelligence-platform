@@ -613,6 +613,150 @@ class StableEntityLineageEvidenceORM(CoreBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+STABLE_ENTITY_VARIANT_TYPES = ("romanization", "verified_alias")
+
+
+class TranslationArtifactORM(CoreBase):
+    """One immutable, content-addressed machine translation output (M... bilingual).
+
+    Content address = source text hash + source language + target language +
+    provider + provider version + settings hash.  Two requests with the same
+    address always resolve to this same row -- nothing is translated twice
+    for an address already on file, and nothing on file is ever silently
+    replaced by a different output for that same address.  A genuinely
+    empty translation (``output_text == ""``) is a normal, storable result,
+    distinct from "never attempted" (no row at all).
+
+    Deliberately separate from ``TranslationORM`` (ADR 0012's title-only
+    Arabic->English cache): that table remains the M5 pipeline's narrow
+    cache.  This table is the general bilingual foundation any later
+    provider/direction/settings combination can content-address into,
+    including translations tied to a specific stable-entity membership via
+    ``TranslationUseORM``.
+    """
+
+    __tablename__ = "translation_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_text_sha256",
+            "source_lang",
+            "target_lang",
+            "provider",
+            "provider_version",
+            "settings_sha256",
+            name="uq_translation_artifacts_content_address",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_text_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    source_lang: Mapped[str] = mapped_column(String(16))
+    target_lang: Mapped[str] = mapped_column(String(16))
+    provider: Mapped[str] = mapped_column(String(64))
+    provider_version: Mapped[str] = mapped_column(String(32))
+    settings_sha256: Mapped[str] = mapped_column(String(64))
+    output_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class TranslationUseORM(CoreBase):
+    """One immutable pointer from a translation artifact to where it applied.
+
+    ``evidence_identity_id`` is always required: a use always names the
+    exact durable source-text span the artifact's ``source_text_sha256``
+    was computed from.  ``source_membership_id`` is additionally set only
+    when that surface also came from a specific stable-entity membership;
+    the composite foreign key below forces it to name a membership that
+    actually witnesses this same evidence identity, so a use can never be
+    stitched to a membership from a different generation or entity than the
+    evidence it claims to translate.
+    """
+
+    __tablename__ = "translation_uses"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_membership_id", "evidence_identity_id"],
+            [
+                "stable_entity_memberships.id",
+                "stable_entity_memberships.evidence_identity_id",
+            ],
+            name="fk_translation_uses_membership_evidence",
+        ),
+        UniqueConstraint(
+            "artifact_id",
+            "evidence_identity_id",
+            "source_membership_id",
+            name="uq_translation_uses_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    artifact_id: Mapped[int] = mapped_column(
+        ForeignKey("translation_artifacts.id"), index=True
+    )
+    evidence_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("evidence_identities.id"), index=True
+    )
+    source_membership_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class StableEntityVariantORM(CoreBase):
+    """A durable alternate surface form attached to a stable entity.
+
+    ``variant_type`` is deliberately never ``"translation"``: a machine
+    translation of a surface belongs on ``TranslationArtifactORM`` /
+    ``TranslationUseORM``, not here.  This table only ever holds a
+    deterministic ``romanization`` (produced locally by
+    ``ArabicAdapter.romanize()``, no external provider) or a human
+    ``verified_alias`` -- two different claims about the *same* language
+    that must stay separately auditable rather than collapsing into one
+    ambiguous "alternate name" bucket.
+
+    ``source_membership_id``/``evidence_identity_id`` follow the same
+    composite-foreign-key pattern as ``StableEntityLineageEvidenceORM``: the
+    variant must be anchored to a membership that actually witnesses the
+    named evidence identity, so it can never be attributed to a generation
+    or entity other than the one that produced its surface text.
+    """
+
+    __tablename__ = "stable_entity_variants"
+    __table_args__ = (
+        CheckConstraint(
+            f"variant_type IN ({_quoted_values(STABLE_ENTITY_VARIANT_TYPES)})",
+            name="ck_stable_entity_variant_type",
+        ),
+        ForeignKeyConstraint(
+            ["source_membership_id", "evidence_identity_id"],
+            [
+                "stable_entity_memberships.id",
+                "stable_entity_memberships.evidence_identity_id",
+            ],
+            name="fk_stable_entity_variants_membership_evidence",
+        ),
+        UniqueConstraint(
+            "stable_entity_id",
+            "variant_type",
+            "surface_text",
+            "language",
+            name="uq_stable_entity_variants_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stable_entity_id: Mapped[int] = mapped_column(
+        ForeignKey("stable_entities.id"), index=True
+    )
+    variant_type: Mapped[str] = mapped_column(String(20))
+    surface_text: Mapped[str] = mapped_column(Text)
+    language: Mapped[str] = mapped_column(String(35))
+    source_membership_id: Mapped[int] = mapped_column(Integer)
+    evidence_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("evidence_identities.id"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ProvenanceORM(CoreBase):
     __tablename__ = "provenance"
 
@@ -836,6 +980,10 @@ class AppendOnlyStableEntityError(RuntimeError):
     """Raised when ORM code tries to rewrite stable-entity history."""
 
 
+class AppendOnlyBilingualError(RuntimeError):
+    """Raised when ORM code tries to mutate immutable bilingual derived data."""
+
+
 @event.listens_for(PipelineEventORM, "before_update")
 def _reject_pipeline_event_update(_mapper, _connection, _target) -> None:  # noqa: ANN001
     raise AppendOnlyEventError("pipeline_events is append-only; append a new event")
@@ -870,4 +1018,28 @@ for _stable_history_model in (
         _stable_history_model,
         "before_delete",
         _reject_stable_entity_history_mutation,
+    )
+
+
+def _reject_bilingual_history_mutation(_mapper, _connection, target) -> None:  # noqa: ANN001
+    table_name = target.__tablename__
+    raise AppendOnlyBilingualError(
+        f"{table_name} is append-only; write a new artifact/use/variant instead"
+    )
+
+
+for _bilingual_history_model in (
+    TranslationArtifactORM,
+    TranslationUseORM,
+    StableEntityVariantORM,
+):
+    event.listen(
+        _bilingual_history_model,
+        "before_update",
+        _reject_bilingual_history_mutation,
+    )
+    event.listen(
+        _bilingual_history_model,
+        "before_delete",
+        _reject_bilingual_history_mutation,
     )
