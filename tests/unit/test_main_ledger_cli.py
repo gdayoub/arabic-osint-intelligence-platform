@@ -14,6 +14,7 @@ from sqlalchemy import select
 import main as cli
 from src.ops.events import PipelineEventType
 from src.ops.ledger import append_pipeline_event
+from src.ops.runtime import PipelineMode
 from src.store.orm import PipelineEventORM
 
 
@@ -63,8 +64,126 @@ def test_run_core_pipeline_cli_forces_ledger_only_options(monkeypatch, capsys):
         "lease_duration": timedelta(minutes=12),
         "review_margin": 0.15,
         "review_limit": 20,
+        "pipeline_mode": PipelineMode.SCHEDULED,
+        "limit_per_source": None,
     }
     assert "no release was prepared or published" in capsys.readouterr().out
+
+
+def test_run_core_pipeline_cli_defaults_to_scheduled_with_no_limit_override(
+    monkeypatch, capsys
+):
+    captured: dict[str, object] = {}
+
+    def fake_run_core_pipeline(**kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return SimpleNamespace(
+            run_id=kwargs["run_id"],
+            health=SimpleNamespace(status="healthy", stages=(), sources=()),
+        )
+
+    monkeypatch.setattr(cli, "setup_logging", lambda _level: None)
+    monkeypatch.setattr(cli, "run_core_pipeline", fake_run_core_pipeline)
+    monkeypatch.setattr(
+        sys, "argv", ["main.py", "run-core-pipeline", "--run-id", "scheduled-run"]
+    )
+
+    cli.main()
+
+    assert captured["pipeline_mode"] == PipelineMode.SCHEDULED
+    assert captured["limit_per_source"] is None
+
+
+def test_run_core_pipeline_cli_accepts_limit_per_source_override(monkeypatch, capsys):
+    captured: dict[str, object] = {}
+
+    def fake_run_core_pipeline(**kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return SimpleNamespace(
+            run_id=kwargs["run_id"],
+            health=SimpleNamespace(status="healthy", stages=(), sources=()),
+        )
+
+    monkeypatch.setattr(cli, "setup_logging", lambda _level: None)
+    monkeypatch.setattr(cli, "run_core_pipeline", fake_run_core_pipeline)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "main.py",
+            "run-core-pipeline",
+            "--run-id",
+            "limited-run",
+            "--limit-per-source",
+            "50",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["limit_per_source"] == 50
+
+
+def test_run_core_pipeline_cli_accepts_backfill_pipeline_mode(monkeypatch, capsys):
+    captured: dict[str, object] = {}
+
+    def fake_run_core_pipeline(**kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return SimpleNamespace(
+            run_id=kwargs["run_id"],
+            health=SimpleNamespace(status="healthy", stages=(), sources=()),
+        )
+
+    monkeypatch.setattr(cli, "setup_logging", lambda _level: None)
+    monkeypatch.setattr(cli, "run_core_pipeline", fake_run_core_pipeline)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "main.py",
+            "run-core-pipeline",
+            "--run-id",
+            "backfill-run",
+            "--pipeline-mode",
+            "backfill",
+            "--limit-per-source",
+            "120",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["pipeline_mode"] == PipelineMode.BACKFILL
+    assert captured["limit_per_source"] == 120
+
+
+@pytest.mark.parametrize("bad_value", ["0", "-1", "not-an-int"])
+def test_run_core_pipeline_cli_rejects_bad_limit_per_source(bad_value):
+    parser = cli.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "run-core-pipeline",
+                "--run-id",
+                "ledger-run",
+                "--limit-per-source",
+                bad_value,
+            ]
+        )
+
+
+def test_run_core_pipeline_cli_rejects_unknown_pipeline_mode():
+    parser = cli.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "run-core-pipeline",
+                "--run-id",
+                "ledger-run",
+                "--pipeline-mode",
+                "nightly",
+            ]
+        )
 
 
 def test_run_core_pipeline_parser_has_no_candidate_or_promotion_argument():

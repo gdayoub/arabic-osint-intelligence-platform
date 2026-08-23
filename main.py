@@ -28,6 +28,7 @@ from src.pipeline.review_core import (
 from src.pipeline.retract_mojibake import run_retract_mojibake
 from src.pipeline.translate_core import run_core_translation
 from src.pipeline.run_pipeline import run_full_pipeline
+from src.config.settings import PipelineMode, resolve_limit_per_source
 from src.ops.ledger import abandon_expired_runs
 from src.ops.runtime import default_commit_sha, run_core_pipeline
 from src.store.blob import get_blob_store
@@ -43,6 +44,25 @@ def _positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
     return parsed
+
+
+def _limit_per_source(value: str) -> int:
+    """Parse --limit-per-source through the single shared cap validator.
+
+    Reuses ``resolve_limit_per_source`` (src/config/settings.py) rather than
+    re-checking "positive integer" here, so the CLI, the ledgered runtime,
+    and ingestion enforce exactly one rule. The pipeline mode does not affect
+    this check: an explicit value must be a positive integer regardless of
+    which mode later resolves it.
+    """
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    try:
+        return resolve_limit_per_source(parsed)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def reconcile_expired_pipeline_runs(
@@ -108,6 +128,27 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=20,
         help="Maximum pairs queued per scorer version; nearest pairs fill an empty uncertainty band",
+    )
+    ledgered_pipeline.add_argument(
+        "--pipeline-mode",
+        type=PipelineMode,
+        choices=[mode.value for mode in PipelineMode],
+        default=PipelineMode.SCHEDULED,
+        help=(
+            "scheduled locks the per-source cap to 24 articles (the cron "
+            "default); backfill defaults to 120 and is for a deliberately "
+            "dispatched manual catch-up run, never for cron"
+        ),
+    )
+    ledgered_pipeline.add_argument(
+        "--limit-per-source",
+        type=_limit_per_source,
+        default=None,
+        help=(
+            "Override the per-source article cap; must be a positive "
+            "integer. Omit to use --pipeline-mode's default (24 scheduled / "
+            "120 backfill)"
+        ),
     )
     sub.add_parser(
         "reconcile-pipeline-runs",
@@ -228,6 +269,8 @@ def main() -> None:
             lease_duration=timedelta(minutes=args.lease_minutes),
             review_margin=args.review_margin,
             review_limit=args.review_limit,
+            pipeline_mode=args.pipeline_mode,
+            limit_per_source=args.limit_per_source,
         )
         print(
             f"ledgered pipeline run={result.run_id} health={result.health.status} "

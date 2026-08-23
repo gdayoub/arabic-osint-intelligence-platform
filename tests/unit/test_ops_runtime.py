@@ -14,6 +14,7 @@ import src.ops.runtime as runtime
 from src.ops.events import PipelineEventType, PipelineReasonCode
 from src.ops.runtime import (
     PipelineExecutionFailed,
+    PipelineMode,
     PipelineStage,
     RuntimeConfigurationError,
     SourceOutcome,
@@ -722,6 +723,106 @@ def test_best_effort_translation_failure_bakes_and_finishes_degraded_without_rel
             select(PipelineEventORM).where(PipelineEventORM.run_id == result.run_id)
         )
     )
+
+
+def _run_ingest_stage(stages, **kwargs) -> None:
+    """Invoke just the ingest stage's operation with a minimal stub runtime."""
+    ingest_stage = next(stage for stage in stages if stage.name == "ingest")
+    fake_runtime = SimpleNamespace(
+        source_started=lambda _name: None,
+        source_completed=lambda _outcome: None,
+    )
+    ingest_stage.operation(fake_runtime)
+
+
+def test_build_core_pipeline_stages_defaults_scheduled_mode_to_24_per_source(
+    monkeypatch,
+):
+    from src.pipeline import ingest_core
+
+    captured: dict[str, object] = {}
+
+    def fake_ingest(**kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return SimpleNamespace(attempted=0, inserted=0, sources={})
+
+    monkeypatch.setattr(ingest_core, "run_core_ingestion", fake_ingest)
+
+    stages = build_core_pipeline_stages()
+    _run_ingest_stage(stages)
+
+    assert captured["limit_per_source"] == 24
+
+
+def test_build_core_pipeline_stages_backfill_mode_defaults_to_120_per_source(
+    monkeypatch,
+):
+    from src.pipeline import ingest_core
+
+    captured: dict[str, object] = {}
+
+    def fake_ingest(**kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return SimpleNamespace(attempted=0, inserted=0, sources={})
+
+    monkeypatch.setattr(ingest_core, "run_core_ingestion", fake_ingest)
+
+    stages = build_core_pipeline_stages(pipeline_mode=PipelineMode.BACKFILL)
+    _run_ingest_stage(stages)
+
+    assert captured["limit_per_source"] == 120
+
+
+def test_build_core_pipeline_stages_explicit_limit_overrides_mode_default(
+    monkeypatch,
+):
+    from src.pipeline import ingest_core
+
+    captured: dict[str, object] = {}
+
+    def fake_ingest(**kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return SimpleNamespace(attempted=0, inserted=0, sources={})
+
+    monkeypatch.setattr(ingest_core, "run_core_ingestion", fake_ingest)
+
+    stages = build_core_pipeline_stages(
+        pipeline_mode=PipelineMode.SCHEDULED, limit_per_source=5
+    )
+    _run_ingest_stage(stages)
+
+    assert captured["limit_per_source"] == 5
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, -100])
+def test_build_core_pipeline_stages_rejects_zero_and_negative_limit(bad_limit):
+    with pytest.raises(RuntimeConfigurationError):
+        build_core_pipeline_stages(limit_per_source=bad_limit)
+
+
+def test_run_core_pipeline_rejects_invalid_limit_before_writing_any_event(session):
+    with pytest.raises(RuntimeConfigurationError):
+        run_core_pipeline(
+            limit_per_source=0,
+            session_scope=_scope(session),
+            run_id="invalid-limit-run",
+            commit_sha=COMMIT_SHA,
+            clock=_clock,
+        )
+
+    assert _event_types(session, "invalid-limit-run") == []
+
+
+def test_core_component_versions_records_pipeline_mode_and_limit_fingerprint():
+    scheduled = core_component_versions(pipeline_mode=PipelineMode.SCHEDULED)
+    backfill = core_component_versions(
+        pipeline_mode=PipelineMode.BACKFILL, limit_per_source=200
+    )
+
+    assert scheduled["ingest.pipeline_mode"] == "scheduled"
+    assert scheduled["ingest.limit_per_source"] == "24"
+    assert backfill["ingest.pipeline_mode"] == "backfill"
+    assert backfill["ingest.limit_per_source"] == "200"
 
 
 def test_core_component_versions_are_static_and_translation_mode_specific():

@@ -1,0 +1,111 @@
+name: OSINT Backfill
+
+# Manual dispatch only -- deliberately no `schedule:` trigger.  A backfill is
+# a one-off, human-approved catch-up run, never a cron job.  See
+# docs/adr/0032 for why this workflow never publishes.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: >-
+          Required justification for this manual backfill (why now, what gap
+          it fills). Recorded in this workflow run's log, not the ledger.
+        required: true
+        type: string
+      limit_per_source:
+        description: >-
+          Per-source article cap for this backfill. Leave blank to use the
+          backfill default of 120 (see docs/adr/0032).
+        required: false
+        default: ""
+      review_margin:
+        description: >-
+          Distance from the scorer threshold that queues a pair for review.
+          Leave as 0.15 unless running a deliberate bulk-labeling backfill.
+        required: false
+        default: "0.15"
+
+# Same private-writer queue as the scheduled pipeline: a backfill and a
+# scheduled run must never race the same URL-unique inserts.
+# cancel-in-progress: false -- queue the next run rather than kill one
+# mid-write, which is worse than waiting.
+concurrency:
+  group: osint-neon-writer
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # A backfill is a much larger scrape than the scheduled 24/source cap, so
+    # it gets a longer budget than pipeline.yml's 30 minutes. It still has a
+    # hard ceiling: a runaway backfill must not hold the writer queue
+    # indefinitely.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      BLOB_BACKEND: r2
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Record backfill reason
+        env:
+          REASON: ${{ inputs.reason }}
+        run: |
+          echo "Backfill reason: $REASON"
+
+      # Same gates the scheduled pipeline runs, in the same order, before any
+      # write: the committed contract bundle must still match the executable
+      # models, and the full unit suite must pass.
+      - run: python scripts/generate_dashboard_contract.py --check
+      - run: python -m pytest tests/unit -q
+
+      # Backfills never create or migrate schema either -- same fail-closed
+      # rule as the scheduled writer.
+      - run: python scripts/verify_core_schema.py
+
+      # One command owns the complete run/stage/source lifecycle, recorded
+      # explicitly as pipeline_mode=backfill.  This job intentionally stops
+      # here: there is no dashboard-shell copy step and no deployment step
+      # anywhere in this workflow, so a manual backfill can never publish to
+      # the public dashboard (see docs/adr/0032).  The snapshot it bakes is
+      # written to a path the scheduled workflow never reads.
+      - name: Run ledgered core pipeline (backfill)
+        env:
+          REVIEW_MARGIN: ${{ inputs.review_margin || '0.15' }}
+          INPUT_LIMIT_PER_SOURCE: ${{ inputs.limit_per_source }}
+        run: |
+          translation_mode=skip
+          if [ -n "${DEEPL_API_KEY:-}" ]; then
+            translation_mode=best-effort
+          fi
+
+          limit_args=()
+          if [ -n "${INPUT_LIMIT_PER_SOURCE:-}" ]; then
+            limit_args=(--limit-per-source "$INPUT_LIMIT_PER_SOURCE")
+          fi
+
+          python main.py run-core-pipeline \
+            --run-id "backfill-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --commit-sha "${{ github.sha }}" \
+            --translation-mode "$translation_mode" \
+            --review-margin "$REVIEW_MARGIN" \
+            --pipeline-mode backfill \
+            "${limit_args[@]}" \
+            --out dist/backfill-data.json
+
+      # No `cp` of the dashboard shell, no Cloudflare deploy step, no
+      # publication of any kind. Private data work stops above.

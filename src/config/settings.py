@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import List
 
@@ -15,6 +16,65 @@ from dotenv import load_dotenv
 
 # Load local .env when running outside Docker.
 load_dotenv()
+
+
+class PipelineMode(str, Enum):
+    """Distinguishes a scheduled cron run from a manual backfill.
+
+    A scheduled run must stay inside the GitHub Actions workflow timeout
+    across every configured source (see docs/adr/0032). A backfill is a
+    deliberately dispatched, longer-running catch-up job. The two modes get
+    different per-source article caps by default; see
+    ``resolve_limit_per_source`` below, which is the single place that
+    defaults and validates that cap.
+    """
+
+    SCHEDULED = "scheduled"
+    BACKFILL = "backfill"
+
+
+# The scheduled starting budget: see docs/adr/0032 for the timeout-budget
+# reasoning and the benchmark that may raise it later.
+SCHEDULED_LIMIT_PER_SOURCE = 24
+# The manual backfill default: closer to the pre-existing
+# max_articles_per_source default, for a deliberately dispatched catch-up run.
+BACKFILL_LIMIT_PER_SOURCE = 120
+
+_DEFAULT_LIMIT_PER_SOURCE: dict[PipelineMode, int] = {
+    PipelineMode.SCHEDULED: SCHEDULED_LIMIT_PER_SOURCE,
+    PipelineMode.BACKFILL: BACKFILL_LIMIT_PER_SOURCE,
+}
+
+
+def resolve_limit_per_source(
+    limit_per_source: int | None,
+    *,
+    pipeline_mode: PipelineMode = PipelineMode.SCHEDULED,
+) -> int:
+    """Default and validate the per-source article cap for one pipeline mode.
+
+    This is the single validation function for the per-source cap. The CLI,
+    the ledgered runtime, and ingestion all call this (directly or through a
+    thin wrapper) instead of re-implementing "positive integer, defaulted by
+    mode" three times. ``None`` defaults to the mode's budget (24 for
+    scheduled, 120 for backfill); an explicit value must be a positive
+    integer regardless of mode.
+    """
+    if not isinstance(pipeline_mode, PipelineMode):
+        try:
+            pipeline_mode = PipelineMode(pipeline_mode)
+        except ValueError as exc:
+            choices = ", ".join(mode.value for mode in PipelineMode)
+            raise ValueError(f"pipeline_mode must be one of: {choices}") from exc
+
+    if limit_per_source is None:
+        return _DEFAULT_LIMIT_PER_SOURCE[pipeline_mode]
+
+    if isinstance(limit_per_source, bool) or not isinstance(limit_per_source, int):
+        raise ValueError("limit_per_source must be an integer")
+    if limit_per_source <= 0:
+        raise ValueError("limit_per_source must be greater than zero")
+    return limit_per_source
 
 
 @dataclass(slots=True)

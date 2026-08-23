@@ -6,9 +6,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
-from src.pipeline.ingest_core import article_to_document_text, ingest_article
+from src.pipeline.ingest_core import article_to_document_text, ingest_article, run_core_ingestion
 from src.store.documents import get_document_ref_by_url, load_document
 from src.store.orm import FactORM
 from src.store.provenance import register_extractor_version
@@ -105,6 +106,23 @@ def test_ingest_article_canonicalizes_url(session, ontology, blob_store):
     ref = get_document_ref_by_url(session, "https://example.com/news/3")
     assert ref is not None
     assert ref.id == document.id
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, -50])
+def test_run_core_ingestion_rejects_zero_and_negative_limit_before_scraping(
+    bad_limit, monkeypatch
+):
+    """An explicit 0/negative cap must fail closed, not silently fall back to
+    SETTINGS.max_articles_per_source the way the old ``or`` default did."""
+    from src.pipeline import ingest_core
+
+    def fail_if_called():
+        raise AssertionError("scrapers must not be built for an invalid limit")
+
+    monkeypatch.setattr(ingest_core, "build_scrapers", fail_if_called)
+
+    with pytest.raises(ValueError):
+        run_core_ingestion(limit_per_source=bad_limit)
 
 
 def test_ingest_article_skips_facts_for_missing_fields(session, ontology, blob_store):

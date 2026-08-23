@@ -31,6 +31,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from src.config.settings import PipelineMode, resolve_limit_per_source
 from src.ops.events import PipelineEventType, PipelineReasonCode
 from src.ops.health import RunHealth, load_run_health
 from src.ops.ledger import append_pipeline_event
@@ -411,6 +412,22 @@ def configured_ingest_source_names() -> tuple[str, ...]:
     return tuple(_validate_source_alias(scraper.source_name) for scraper in build_scrapers())
 
 
+def _resolved_limit_per_source(
+    limit_per_source: int | None, *, pipeline_mode: PipelineMode
+) -> int:
+    """Runtime-layer wrapper over the single shared cap validator.
+
+    Translates ``resolve_limit_per_source``'s ``ValueError`` into
+    ``RuntimeConfigurationError`` so an invalid cap fails the same way every
+    other unsafe orchestration input does, without re-implementing the
+    "positive integer, defaulted by mode" check here.
+    """
+    try:
+        return resolve_limit_per_source(limit_per_source, pipeline_mode=pipeline_mode)
+    except ValueError as exc:
+        raise RuntimeConfigurationError(str(exc)) from exc
+
+
 def _validated_translation_mode(value: str) -> str:
     if value not in _TRANSLATION_MODES:
         choices = ", ".join(sorted(_TRANSLATION_MODES))
@@ -418,14 +435,27 @@ def _validated_translation_mode(value: str) -> str:
     return value
 
 
-def core_component_versions(*, translation_mode: str = "skip") -> dict[str, str]:
+def core_component_versions(
+    *,
+    translation_mode: str = "skip",
+    pipeline_mode: PipelineMode = PipelineMode.SCHEDULED,
+    limit_per_source: int | None = None,
+) -> dict[str, str]:
     """Return the exact code component versions used by one core run.
 
     The map is captured in ``run_started`` before source writes begin. It
     contains only stable component identities and versions, never settings,
     credentials, source URLs, or an unreviewed database value.
+
+    ``pipeline_mode`` and the resolved ``limit_per_source`` are also part of
+    this fingerprint: which mode ran and what article cap it used are exactly
+    the kind of config evidence a later health read needs, and this is the
+    one place scheduled/backfill callers already converge on.
     """
     translation_mode = _validated_translation_mode(translation_mode)
+    resolved_limit = _resolved_limit_per_source(
+        limit_per_source, pipeline_mode=pipeline_mode
+    )
 
     from src.extract.gazetteer import GazetteerExtractor
     from src.pipeline import process_core, resolve_core
@@ -447,6 +477,9 @@ def core_component_versions(*, translation_mode: str = "skip") -> dict[str, str]
         from src.processing.translation import EXTRACTOR_NAME, EXTRACTOR_VERSION
 
         versions[EXTRACTOR_NAME] = EXTRACTOR_VERSION
+
+    versions["ingest.pipeline_mode"] = PipelineMode(pipeline_mode).value
+    versions["ingest.limit_per_source"] = str(resolved_limit)
 
     return dict(sorted(versions.items()))
 
@@ -532,21 +565,32 @@ def bake_stage(
 
 def build_core_pipeline_stages(
     *,
+    pipeline_mode: PipelineMode = PipelineMode.SCHEDULED,
+    limit_per_source: int | None = None,
     translation_mode: str = "skip",
     bake_out_path: Path | None = None,
     review_margin: float = 0.15,
     review_limit: int = 20,
 ) -> tuple[PipelineStage, ...]:
-    """Build, but do not run, the current core pipeline in ledger order."""
+    """Build, but do not run, the current core pipeline in ledger order.
+
+    ``pipeline_mode`` and ``limit_per_source`` are resolved eagerly here (via
+    the single shared validator), before any stage closure is created, so an
+    invalid cap raises immediately rather than only once ingestion runs.
+    """
     from src.pipeline.extract_core import run_core_extraction
     from src.pipeline.ingest_core import run_core_ingestion
     from src.pipeline.process_core import run_core_processing
     from src.pipeline.resolve_core import run_core_resolution
 
     translation_mode = _validated_translation_mode(translation_mode)
+    resolved_limit = _resolved_limit_per_source(
+        limit_per_source, pipeline_mode=pipeline_mode
+    )
 
     def run_ingest(runtime: StageRuntime) -> StageOutcome:
         stats = run_core_ingestion(
+            limit_per_source=resolved_limit,
             on_source_started=runtime.source_started,
             on_source_finished=lambda name, telemetry: runtime.source_completed(
                 _source_outcome_from_ingest(name, telemetry)
@@ -1133,6 +1177,8 @@ def run_orchestrated_pipeline(
 
 def run_core_pipeline(
     *,
+    pipeline_mode: PipelineMode = PipelineMode.SCHEDULED,
+    limit_per_source: int | None = None,
     translation_mode: str = "skip",
     bake_out_path: Path | None = None,
     prepare_release: bool = False,
@@ -1142,7 +1188,13 @@ def run_core_pipeline(
     review_limit: int = 20,
     **kwargs: Any,
 ) -> OrchestratedRun:
-    """Run the core data stages with ledger evidence, not a release claim."""
+    """Run the core data stages with ledger evidence, not a release claim.
+
+    ``pipeline_mode`` defaults to ``PipelineMode.SCHEDULED`` and
+    ``limit_per_source`` defaults to ``None`` (mode default), so an existing
+    caller that omits both keeps today's scheduled/24-per-source behavior
+    unchanged.
+    """
     if prepare_release and bake_out_path is None:
         raise RuntimeConfigurationError(
             "prepare_release requires bake_out_path so the candidate has a complete snapshot"
@@ -1150,10 +1202,14 @@ def run_core_pipeline(
     translation_mode = _validated_translation_mode(translation_mode)
     if extractor_versions is None:
         extractor_versions = core_component_versions(
-            translation_mode=translation_mode
+            translation_mode=translation_mode,
+            pipeline_mode=pipeline_mode,
+            limit_per_source=limit_per_source,
         )
     return run_orchestrated_pipeline(
         build_core_pipeline_stages(
+            pipeline_mode=pipeline_mode,
+            limit_per_source=limit_per_source,
             translation_mode=translation_mode,
             bake_out_path=bake_out_path,
             review_margin=review_margin,

@@ -12,6 +12,27 @@ on:
           bulk-labeling session (see docs/adr/0013).
         required: false
         default: "0.15"
+      pipeline_mode:
+        description: >-
+          scheduled keeps the 24-article/source cap this workflow always
+          uses on its cron trigger. backfill raises the default to 120 for
+          one manually dispatched catch-up run — prefer backfill.yml
+          instead for a real bulk backfill (see docs/adr/0032). Ignored on
+          the cron trigger: a scheduled run is always pipeline_mode=scheduled
+          regardless of this input's stored default.
+        required: false
+        default: "scheduled"
+        type: choice
+        options:
+          - scheduled
+          - backfill
+      limit_per_source:
+        description: >-
+          Override the per-source article cap for this one manually
+          dispatched run. Leave blank to use pipeline_mode's default (24
+          scheduled / 120 backfill). Ignored on the cron trigger.
+        required: false
+        default: ""
 
 # Prevent two overlapping runs from racing the same URL-unique inserts.
 # cancel-in-progress: false -- queue the next run rather than kill one
@@ -63,19 +84,40 @@ jobs:
       # Missing DeepL skips translation. A configured provider runs in
       # best-effort mode: a provider failure finishes the ledgered run as
       # degraded after baking the still-usable Arabic snapshot.
+      # pipeline_mode/limit_per_source are only ever read on a manual
+      # workflow_dispatch (EVENT_NAME check below) -- the cron `schedule`
+      # trigger has no `inputs` context at all, so a cron run always resolves
+      # to scheduled/24 no matter what default is stored on this workflow's
+      # dispatch form.  Values flow through env vars, not direct expression
+      # interpolation into the shell script, to keep the invocation safe.
       - name: Run ledgered core pipeline
         env:
           REVIEW_MARGIN: ${{ inputs.review_margin || '0.15' }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PIPELINE_MODE: ${{ inputs.pipeline_mode }}
+          INPUT_LIMIT_PER_SOURCE: ${{ inputs.limit_per_source }}
         run: |
           translation_mode=skip
           if [ -n "${DEEPL_API_KEY:-}" ]; then
             translation_mode=best-effort
           fi
+
+          pipeline_mode=scheduled
+          limit_args=()
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            pipeline_mode="${INPUT_PIPELINE_MODE:-scheduled}"
+            if [ -n "${INPUT_LIMIT_PER_SOURCE:-}" ]; then
+              limit_args=(--limit-per-source "$INPUT_LIMIT_PER_SOURCE")
+            fi
+          fi
+
           python main.py run-core-pipeline \
             --run-id "github-${{ github.run_id }}-${{ github.run_attempt }}" \
             --commit-sha "${{ github.sha }}" \
             --translation-mode "$translation_mode" \
             --review-margin "$REVIEW_MARGIN" \
+            --pipeline-mode "$pipeline_mode" \
+            "${limit_args[@]}" \
             --out dist/data.json
 
       - run: cp src/api/static/dashboard.html dist/index.html

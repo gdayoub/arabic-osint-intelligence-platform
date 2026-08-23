@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.config.settings import SETTINGS
+from src.config.settings import SETTINGS, resolve_limit_per_source
 from src.core.models import Document, ExtractorVersion
 from src.core.ontology import Ontology
 from src.database.crud import canonicalize_url, compute_content_hash
@@ -286,8 +286,19 @@ def run_core_ingestion(
     ingest_pipeline.py does — that snapshot existed to keep a durable copy
     of scraped text, which the blob store now does natively, deduplicated
     and compressed, without a growing pile of unmanaged JSON files.
+
+    ``limit_per_source=None`` keeps the existing standalone default
+    (``SETTINGS.max_articles_per_source``) for a direct caller such as the
+    ``ingest-core`` CLI command. An explicit value is validated through the
+    same shared cap check the ledgered scheduled/backfill path uses
+    (src/config/settings.py's ``resolve_limit_per_source``), so a caller can
+    no longer pass 0 and silently fall back to the settings default: it now
+    fails before any scraper runs.
     """
-    limit = limit_per_source or SETTINGS.max_articles_per_source
+    if limit_per_source is None:
+        limit = SETTINGS.max_articles_per_source
+    else:
+        limit = resolve_limit_per_source(limit_per_source)
     blob_store = blob_store or get_blob_store()
     ontology = Ontology.from_yaml(_ONTOLOGY_PATH)
     scrapers = build_scrapers()
