@@ -26,6 +26,7 @@ def test_pipeline_uses_one_ledgered_cli_and_keeps_the_direct_deploy_boundary():
     assert "--translation-mode \"$translation_mode\"" in pipeline
     assert "cp src/api/static/dashboard.html dist/index.html" in pipeline
     assert "cp src/api/static/country.html dist/country.html" in pipeline
+    assert "cp src/api/static/high_risk.html dist/high_risk.html" in pipeline
     assert "cloudflare/wrangler-action@v3" in pipeline
     assert "release_id" not in pipeline
     assert "promote_release" not in pipeline

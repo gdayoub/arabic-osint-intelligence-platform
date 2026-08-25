@@ -72,6 +72,23 @@ body { font-family: var(--font-sans); background: var(--bg-base); color: var(--t
 .feed-time { font-family: var(--font-mono); font-size: 0.64rem; color: var(--text-muted); white-space: nowrap; }
 
 .msg { color: var(--text-muted); padding: 30px 0; text-align: center; }
+
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+.search-input {
+  flex: 1; min-width: 200px; background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm); padding: 9px 14px; color: var(--text-primary); font-family: var(--font-sans);
+  font-size: 0.84rem; outline: none; transition: border-color 200ms var(--ease);
+}
+.search-input:focus { border-color: var(--red-200); }
+.search-input::placeholder { color: var(--text-muted); }
+.level-pill {
+  font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-tertiary); background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm); padding: 8px 13px; cursor: pointer; transition: all 200ms var(--ease);
+}
+.level-pill:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.level-pill[aria-pressed="true"] { color: var(--text-primary); border-color: var(--red-200); background: var(--red-100); }
+.filter-count { font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-muted); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -98,7 +115,14 @@ body { font-family: var(--font-sans); background: var(--bg-base); color: var(--t
   </div>
 
   <div class="section">
-    <div class="section-head"><div class="section-title">Coverage</div><div class="section-sub">Articles</div></div>
+    <div class="section-head"><div class="section-title">Coverage</div><div class="section-sub" id="feed-count">Articles</div></div>
+    <div class="filter-row">
+      <input class="search-input" id="search-input" type="text" placeholder="Search titles, topic, source...">
+      <button class="level-pill" data-level="all" aria-pressed="true">All</button>
+      <button class="level-pill" data-level="high" aria-pressed="false">High</button>
+      <button class="level-pill" data-level="medium" aria-pressed="false">Medium</button>
+      <button class="level-pill" data-level="low" aria-pressed="false">Low</button>
+    </div>
     <div id="feed"></div>
   </div>
 </div>
@@ -153,8 +177,41 @@ function renderCharts(d) {
   });
 }
 
+let allArticles = [];
+let activeLevel = 'all';
+
+function matchesSearch(article, query) {
+  if (!query) return true;
+  const haystack = [article.title, article.title_en, article.topic, article.source]
+    .filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(query);
+}
+
+function applyFilters() {
+  const query = (document.getElementById('search-input').value || '').trim().toLowerCase();
+  const filtered = allArticles.filter(a => {
+    const level = (a.escalation || 'low').toLowerCase();
+    const levelOk = activeLevel === 'all' || level === activeLevel;
+    return levelOk && matchesSearch(a, query);
+  });
+  document.getElementById('feed-count').textContent =
+    filtered.length === allArticles.length ? `${allArticles.length} articles` : `${filtered.length} of ${allArticles.length} articles`;
+  renderFeed(filtered);
+}
+
+function setupFilters() {
+  document.getElementById('search-input').addEventListener('input', applyFilters);
+  document.querySelectorAll('.level-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeLevel = btn.dataset.level;
+      document.querySelectorAll('.level-pill').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      applyFilters();
+    });
+  });
+}
+
 function renderFeed(articles) {
-  if (!articles.length) { document.getElementById('feed').innerHTML = '<div class="msg">No articles for this country.</div>'; return; }
+  if (!articles.length) { document.getElementById('feed').innerHTML = '<div class="msg">No articles match this filter.</div>'; return; }
   document.getElementById('feed').innerHTML = articles.map(a => {
     const e = (a.escalation || 'low').toLowerCase();
     const t = a.published_date ? new Date(a.published_date).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false}) : '';
@@ -188,7 +245,8 @@ async function init() {
     const updated = new Date(d.generated_at).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false});
     document.getElementById('country-sub').textContent = `${d.total} articles · updated ${updated}`;
 
-    renderKPIs(d); renderCharts(d); renderFeed(d.articles || []);
+    allArticles = d.articles || [];
+    renderKPIs(d); renderCharts(d); setupFilters(); applyFilters();
   } catch (e) {
     console.error(e);
     document.getElementById('country-name').textContent = 'Country not found';

@@ -62,6 +62,7 @@ _SOURCE_WARNING_REASONS = {
 _STATIC_RELEASE_ASSETS = (
     ("index.html", "dashboard.html"),
     ("country.html", "country.html"),
+    ("high_risk.html", "high_risk.html"),
 )
 _TRANSLATION_MODES = frozenset({"skip", "best-effort"})
 

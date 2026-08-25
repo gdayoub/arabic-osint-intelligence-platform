@@ -209,6 +209,9 @@ def test_bake_candidate_carries_the_exact_static_dashboard_shell(
     assert artifacts["country.html"] == (
         repo_root / "src" / "api" / "static" / "country.html"
     ).read_bytes()
+    assert artifacts["high_risk.html"] == (
+        repo_root / "src" / "api" / "static" / "high_risk.html"
+    ).read_bytes()
 
 
 def test_runtime_turns_a_stage_exception_into_safe_stage_and_run_terminals(session):
