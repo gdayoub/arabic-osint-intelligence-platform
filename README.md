@@ -14,11 +14,11 @@
 
 ## What this actually is
 
-Not a scraper-plus-dashboard demo. It's an **entity resolution and link
-analysis engine** — the kind of system that sits behind real intelligence
-tooling — built with Arabic-language OSINT as its first domain, but designed
+I made this **entity resolution and link analysis engine**  
+the system that sits behind real intelligence
+tooling built with Arabic language OSINT as its first domain, but designed
 so language and object types are configuration, never Python. The
-architecture doesn't know it's Arabic. It doesn't know it's news.
+architecture doesn't know it's Arabic. It doesn't know it's news!!.
 
 ```
 Document  →  Mention  →  Entity  →  Graph
@@ -49,11 +49,8 @@ did we believe as of a given date."
   English-language query can find an Arabic-only entity without losing the
   original wording.
 - **Zero idle cost.** The entire public dashboard is static JSON baked by a
-  GitHub Actions cron job and served from a Cloudflare Worker — no server
+  GitHub Actions cron job and served from a Cloudflare Worker so no server
   runs when nobody's looking at it.
-- **Honest failure states.** A source that's down doesn't make a country
-  look quiet. Coverage, staleness, and failed sources are explicit fields,
-  not silently dropped rows.
 
 ## Architecture
 
@@ -73,7 +70,7 @@ flowchart LR
 
 Runs entirely on free tiers: GitHub Actions (cron, every 6 hours) drives the
 whole pipeline, writes go to Neon Postgres and Cloudflare R2, and the public
-artifact is a single content-addressed JSON file — no always-on API, no
+artifact is a single content-addressed JSON file so no always-on API, no
 server bill.
 
 ## Dashboard
@@ -96,10 +93,10 @@ catch and only real output reveals:
   A single repeated Arabic string (إيران, "Iran") produced one oversized
   blocking bucket that blew past the block-size guard and got discarded
   wholesale — so the *most* mentioned entities were the *most* likely to
-  vanish. Fix: collapse byte-identical strings before blocking. Entity count
+  vanish. Fix: collapse byte identical strings before blocking. Entity count
   went from 3,769 phantom fragments to 87 real ones.
 - **A perfect AUC score was a bug report, not a win.** The first pair
-  scorer hit AUC 1.000 because its training features leaked the label —
+  scorer hit AUC 1.000 because its training features leaked the label,
   positive pairs happened to share a source and land a day apart, negatives
   didn't, so the model learned `same_source` instead of learning names.
   Redrawing negative examples from a seeded RNG dropped AUC to a believable
@@ -199,14 +196,10 @@ python main.py run-core-pipeline --run-id local-dev-1 --limit-per-source 10
 pytest tests/unit -q
 ```
 
-476 tests: unit coverage over the full pipeline, Hypothesis property-based
+476 tests: unit coverage over the full pipeline, Hypothesis property based
 tests for Arabic normalization (idempotence, offset stability under any
-Unicode input), and a hand-labeled golden set of Arabic name pairs that
+Unicode input), and a hand labeled  set of Arabic name pairs that
 locks in exactly which names should and shouldn't resolve to the same
 entity.
 
-## License and scope
 
-Personal project, built to learn and to defend in interviews — every
-architectural decision has an ADR in `docs/adr/` explaining what was
-rejected and why. Not affiliated with any of the news sources it monitors.
