@@ -30,7 +30,15 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Ingestion is bounded by --limit-per-source and BaseScraper's per-source
+    # time budget, but resolve_core's entity resolution is a full recompute
+    # over the whole live mention corpus every run (its own docstring: "at
+    # the current corpus size a recompute takes seconds... if it stops
+    # taking seconds the fix is incremental blocking"). The corpus grew past
+    # that point (2026-08-25), so the job needs more room than the 30-minute
+    # budget that was sized only for ingestion. Raise this again -- or build
+    # the incremental fix -- once resolution itself is measured and bounded.
+    timeout-minutes: 55
     permissions:
       contents: read
     env:
@@ -85,6 +93,7 @@ jobs:
             --translation-mode "$translation_mode" \
             --review-margin "$REVIEW_MARGIN" \
             --limit-per-source "$LIMIT_PER_SOURCE" \
+            --lease-minutes 50 \
             --out dist/data.json
 
       - run: cp src/api/static/dashboard.html dist/index.html
