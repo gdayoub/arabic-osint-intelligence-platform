@@ -647,6 +647,31 @@ def test_all_zero_sources_fail_closed_before_bake_even_with_known_warnings(
     assert _RELEASE_EVENT_TYPES.isdisjoint(event_types)
 
 
+def test_build_core_pipeline_stages_threads_limit_per_source_to_ingestion(monkeypatch):
+    """A workflow-provided per-source cap must actually reach the scrapers,
+    not just validate at the CLI boundary (see the 30-minute scheduled-run
+    timeouts caused by an unbounded per-source article count)."""
+    from src.pipeline import ingest_core
+
+    captured: dict[str, object] = {}
+
+    def fake_ingest(**kwargs):  # noqa: ANN001
+        captured["limit_per_source"] = kwargs.get("limit_per_source")
+        return SimpleNamespace(attempted=0, inserted=0, sources={})
+
+    monkeypatch.setattr(ingest_core, "run_core_ingestion", fake_ingest)
+
+    stages = build_core_pipeline_stages(limit_per_source=20)
+    ingest_stage = next(stage for stage in stages if stage.name == "ingest")
+    stage_runtime = SimpleNamespace(
+        source_started=lambda _name: None,
+        source_completed=lambda _outcome: None,
+    )
+    ingest_stage.operation(stage_runtime)
+
+    assert captured["limit_per_source"] == 20
+
+
 def test_best_effort_translation_failure_bakes_and_finishes_degraded_without_release_events(
     session, monkeypatch, tmp_path
 ):

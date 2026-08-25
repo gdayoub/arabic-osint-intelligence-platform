@@ -19,6 +19,7 @@ from src.ops.runtime import (
     run_orchestrated_pipeline,
 )
 from src.pipeline import ingest_core
+from src.scraping import base_scraper as base_scraper_module
 from src.scraping.base_scraper import BaseScraper
 from src.scraping.scraper_utils import ArticleRecord
 from src.store.orm import DocumentORM, PipelineEventORM
@@ -131,6 +132,50 @@ def test_empty_listing_is_visible_as_a_broken_selector():
     assert result["article_pages_attempted"] == 0
     assert result["articles_scraped"] == 0
     assert result["reason_code"] == PipelineReasonCode.SOURCE_SELECTOR_FAILED.value
+
+
+def test_listing_traversal_stops_once_the_source_time_budget_is_exhausted():
+    """One dead source must degrade to a partial yield, not stall the job
+    (the 30-minute scheduled runs that got cancelled once 21 sources shared
+    one unbounded time budget)."""
+    scraper = _FixtureScraper(links=["https://example.com/a1"])
+    scraper.settings.max_source_seconds = 0.0
+
+    articles = scraper.scrape(limit=5)
+
+    assert articles == []
+    stats = scraper.get_last_scrape_stats()
+    assert stats["source_budget_exhausted"] is True
+    assert stats["listing_pages_attempted"] == 0
+
+
+def test_article_fetch_stops_once_the_source_time_budget_is_exhausted(monkeypatch):
+    """The budget must also cut off article fetching after a listing page
+    already succeeded, not just block the very first fetch."""
+    scraper = _FixtureScraper(
+        links=["https://example.com/a1", "https://example.com/a2"]
+    )
+    scraper.settings.max_source_seconds = 5.0
+
+    calls = {"n": 0}
+
+    def fake_monotonic():
+        calls["n"] += 1
+        # Calls 1-2 cover deadline setup and the single listing-loop check
+        # (max_pages_per_source=1 in _test_settings, so listing finishes in
+        # one iteration); every call from the article loop onward reports
+        # time far past the deadline.
+        return 0.0 if calls["n"] <= 2 else 1000.0
+
+    monkeypatch.setattr(base_scraper_module.time, "monotonic", fake_monotonic)
+
+    articles = scraper.scrape(limit=5)
+
+    assert articles == []
+    stats = scraper.get_last_scrape_stats()
+    assert stats["source_budget_exhausted"] is True
+    assert stats["listing_pages_attempted"] == 1
+    assert stats["article_pages_attempted"] == 0
 
 
 def test_broken_selector_counts_reach_the_per_source_ingestion_result(

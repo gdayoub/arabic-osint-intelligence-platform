@@ -63,8 +63,51 @@ def test_run_core_pipeline_cli_forces_ledger_only_options(monkeypatch, capsys):
         "lease_duration": timedelta(minutes=12),
         "review_margin": 0.15,
         "review_limit": 20,
+        "limit_per_source": None,
     }
     assert "no release was prepared or published" in capsys.readouterr().out
+
+
+def test_run_core_pipeline_cli_passes_limit_per_source_through(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_run_core_pipeline(**kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return SimpleNamespace(
+            run_id=kwargs["run_id"],
+            health=SimpleNamespace(status="healthy", stages=(), sources=()),
+        )
+
+    monkeypatch.setattr(cli, "setup_logging", lambda _level: None)
+    monkeypatch.setattr(cli, "run_core_pipeline", fake_run_core_pipeline)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "main.py",
+            "run-core-pipeline",
+            "--run-id",
+            "github-123-1",
+            "--limit-per-source",
+            "20",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["limit_per_source"] == 20
+
+
+def test_run_core_pipeline_cli_rejects_a_non_positive_limit_per_source():
+    parser = cli.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ["run-core-pipeline", "--run-id", "ledger-run", "--limit-per-source", "0"]
+        )
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ["run-core-pipeline", "--run-id", "ledger-run", "--limit-per-source", "-3"]
+        )
 
 
 def test_run_core_pipeline_parser_has_no_candidate_or_promotion_argument():

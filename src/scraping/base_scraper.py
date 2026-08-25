@@ -189,6 +189,13 @@ class BaseScraper(ABC):
         """Scrape listing pages and then article pages with deduped link set."""
         max_articles = max(1, limit)
         max_listing_pages = max(1, self.settings.max_pages_per_source)
+        # A stuck or slow-to-respond source must not consume the whole
+        # scheduled job (see the 30-minute GitHub Actions runs that got
+        # cancelled once 21 sources shared one unbounded time budget).
+        # `deadline` is wall-clock; every fetch loop below checks it before
+        # spending more time, so one dead source degrades to a partial yield
+        # instead of blocking every source queued after it.
+        deadline = time.monotonic() + self.settings.max_source_seconds
 
         stats = self._empty_scrape_stats()
         section_urls = self.get_section_urls()
@@ -205,6 +212,13 @@ class BaseScraper(ABC):
         blocked_branches: set[str] = set()
 
         while queue and stats["listing_pages_valid_visited"] < max_listing_pages:
+            if time.monotonic() >= deadline:
+                stats["source_budget_exhausted"] = True
+                self.logger.info(
+                    "%s stopping listing traversal: source time budget exhausted",
+                    self.source_name,
+                )
+                break
             listing_url = queue.pop(0)
             branch_key = urlsplit(listing_url).path.rstrip("/")
             if branch_key in blocked_branches:
@@ -318,6 +332,13 @@ class BaseScraper(ABC):
         for article_url in unique_candidate_links:
             if len(records) >= max_articles:
                 break
+            if time.monotonic() >= deadline:
+                stats["source_budget_exhausted"] = True
+                self.logger.info(
+                    "%s stopping article fetch: source time budget exhausted",
+                    self.source_name,
+                )
+                break
 
             stats["article_pages_attempted"] += 1
             article_html = self.fetch_html(article_url)
@@ -422,6 +443,7 @@ class BaseScraper(ABC):
             "parsing_failure_count": 0,
             "latest_successful_article_at": None,
             "reason_code": None,
+            "source_budget_exhausted": False,
         }
 
     @staticmethod

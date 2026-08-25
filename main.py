@@ -109,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=20,
         help="Maximum pairs queued per scorer version; nearest pairs fill an empty uncertainty band",
     )
+    ledgered_pipeline.add_argument(
+        "--limit-per-source",
+        type=_positive_int,
+        default=None,
+        help="Cap articles fetched per source this run; omit to use the configured default",
+    )
     sub.add_parser(
         "reconcile-pipeline-runs",
         help="Mark expired unfinished pipeline runs abandoned without touching release state",
@@ -228,6 +234,7 @@ def main() -> None:
             lease_duration=timedelta(minutes=args.lease_minutes),
             review_margin=args.review_margin,
             review_limit=args.review_limit,
+            limit_per_source=args.limit_per_source,
         )
         print(
             f"ledgered pipeline run={result.run_id} health={result.health.status} "

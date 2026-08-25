@@ -12,6 +12,13 @@ on:
           bulk-labeling session (see docs/adr/0013).
         required: false
         default: "0.15"
+      limit_per_source:
+        description: >-
+          Max articles fetched per source this run. Keeps 21 sources inside
+          the 30-minute job budget; raise only for a one-off manual backfill
+          and watch the run against the timeout.
+        required: false
+        default: "20"
 
 # Prevent two overlapping runs from racing the same URL-unique inserts.
 # cancel-in-progress: false -- queue the next run rather than kill one
@@ -66,6 +73,7 @@ jobs:
       - name: Run ledgered core pipeline
         env:
           REVIEW_MARGIN: ${{ inputs.review_margin || '0.15' }}
+          LIMIT_PER_SOURCE: ${{ inputs.limit_per_source || '20' }}
         run: |
           translation_mode=skip
           if [ -n "${DEEPL_API_KEY:-}" ]; then
@@ -76,6 +84,7 @@ jobs:
             --commit-sha "${{ github.sha }}" \
             --translation-mode "$translation_mode" \
             --review-margin "$REVIEW_MARGIN" \
+            --limit-per-source "$LIMIT_PER_SOURCE" \
             --out dist/data.json
 
       - run: cp src/api/static/dashboard.html dist/index.html

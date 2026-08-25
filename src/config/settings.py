@@ -36,6 +36,7 @@ class Settings:
     scrape_delay_seconds: float = 0.8
     max_articles_per_source: int = 120
     max_pages_per_source: int = 6
+    max_source_seconds: float = 90.0
     scrape_sections_enabled: bool = True
     scrape_archives_enabled: bool = True
     min_article_body_chars: int = 120
@@ -105,6 +106,7 @@ class Settings:
             scrape_delay_seconds=float(os.getenv("SCRAPE_DELAY_SECONDS", "0.8")),
             max_articles_per_source=int(os.getenv("MAX_ARTICLES_PER_SOURCE", "120")),
             max_pages_per_source=int(os.getenv("MAX_PAGES_PER_SOURCE", "6")),
+            max_source_seconds=float(os.getenv("MAX_SOURCE_SECONDS", "90.0")),
             scrape_sections_enabled=_env_bool(
                 os.getenv("SCRAPE_SECTIONS_ENABLED", "true")
             ),

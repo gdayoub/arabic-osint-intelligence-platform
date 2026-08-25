@@ -536,6 +536,7 @@ def build_core_pipeline_stages(
     bake_out_path: Path | None = None,
     review_margin: float = 0.15,
     review_limit: int = 20,
+    limit_per_source: int | None = None,
 ) -> tuple[PipelineStage, ...]:
     """Build, but do not run, the current core pipeline in ledger order."""
     from src.pipeline.extract_core import run_core_extraction
@@ -547,6 +548,7 @@ def build_core_pipeline_stages(
 
     def run_ingest(runtime: StageRuntime) -> StageOutcome:
         stats = run_core_ingestion(
+            limit_per_source=limit_per_source,
             on_source_started=runtime.source_started,
             on_source_finished=lambda name, telemetry: runtime.source_completed(
                 _source_outcome_from_ingest(name, telemetry)
@@ -1140,6 +1142,7 @@ def run_core_pipeline(
     extractor_versions: Mapping[str, str] | None = None,
     review_margin: float = 0.15,
     review_limit: int = 20,
+    limit_per_source: int | None = None,
     **kwargs: Any,
 ) -> OrchestratedRun:
     """Run the core data stages with ledger evidence, not a release claim."""
@@ -1158,6 +1161,7 @@ def run_core_pipeline(
             bake_out_path=bake_out_path,
             review_margin=review_margin,
             review_limit=review_limit,
+            limit_per_source=limit_per_source,
         ),
         prepare_release=prepare_release,
         release_id=release_id,
