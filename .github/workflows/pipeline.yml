@@ -99,6 +99,8 @@ jobs:
       - run: cp src/api/static/dashboard.html dist/index.html
       - run: cp src/api/static/country.html dist/country.html
       - run: cp src/api/static/high_risk.html dist/high_risk.html
+      - run: cp src/api/static/engine.html dist/engine.html
+      - run: cp -R src/api/static/assets dist/assets
 
       # Deploys as a Workers-with-static-assets site (wrangler.toml), not
       # classic Pages -- see docs/adr/0008 for why.

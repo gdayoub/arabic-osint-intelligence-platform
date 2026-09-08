@@ -662,6 +662,7 @@ def _publish_staged_snapshot(
     data: dict[str, Any],
     country_pages: dict[str, dict[str, Any]],
     out_path: Path,
+    atlas: dict[str, Any] | None = None,
 ) -> None:
     """Stage every JSON file, then make the main snapshot the commit marker.
 
@@ -697,6 +698,8 @@ def _publish_staged_snapshot(
         write_data_json(data, staged_data)
         for page in country_pages.values():
             write_data_json(page, staged_countries / f"{page['slug']}.json")
+        if atlas is not None:
+            write_data_json(atlas, staged_countries / "_atlas.json")
 
         had_data = out_path.exists()
         had_countries = countries_path.exists()
@@ -734,12 +737,20 @@ def publish_snapshot_bundle(
     data: dict[str, Any],
     country_pages: dict[str, dict[str, Any]],
     out_path: Path,
+    atlas: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Validate and publish one dashboard/country snapshot candidate."""
     validated_data, validated_pages = validate_snapshot_bundle(
         data, country_pages
     )
-    _publish_staged_snapshot(validated_data, validated_pages, out_path)
+    if atlas is not None:
+        from src.contracts.atlas import AtlasSnapshot
+        atlas = AtlasSnapshot.model_validate(atlas).model_dump(mode="json")
+        if atlas["generated_at"] != validated_data["generated_at"]:
+            raise ValueError("atlas must belong to the same snapshot")
+        if len(atlas["articles"]) != validated_data["stats"]["total_processed"]:
+            raise ValueError("complete atlas must contain every current processed article")
+    _publish_staged_snapshot(validated_data, validated_pages, out_path, atlas=atlas)
     return validated_data, validated_pages
 
 
@@ -752,6 +763,8 @@ def run_bake(out_path: Path, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[s
             generated_at=generated_at,
         )
         country_pages = bake_country_pages(session, generated_at=generated_at)
+        from scripts.bake_atlas import bake_atlas
+        atlas = bake_atlas(session, generated_at)
 
     # The index the main dashboard links from: name, slug, count. The heavy
     # per-country payloads stay in their own files.
@@ -760,6 +773,6 @@ def run_bake(out_path: Path, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[s
         for page in sorted(country_pages.values(), key=lambda p: p["total"], reverse=True)
     ]
 
-    data, country_pages = publish_snapshot_bundle(data, country_pages, out_path)
+    data, country_pages = publish_snapshot_bundle(data, country_pages, out_path, atlas=atlas)
 
     return data
