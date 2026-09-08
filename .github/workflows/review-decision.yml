@@ -47,6 +47,9 @@ jobs:
           python main.py bake-dashboard --out dist/data.json
           cp src/api/static/dashboard.html dist/index.html
           cp src/api/static/country.html dist/country.html
+          cp src/api/static/high_risk.html dist/high_risk.html
+          cp src/api/static/engine.html dist/engine.html
+          cp -R src/api/static/assets dist/assets
 
       - name: Deploy refreshed dashboard
         uses: cloudflare/wrangler-action@v3

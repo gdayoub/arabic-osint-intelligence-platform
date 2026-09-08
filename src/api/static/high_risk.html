@@ -1,260 +1,257 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>High Risk · OSINT Console</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
-:root {
-  --bg-base: #07070A; --bg-surface: #0C0C10; --bg-elevated: #141418; --bg-overlay: #1A1A1F;
-  --border-subtle: rgba(255,255,255,0.04); --border-default: rgba(255,255,255,0.07); --border-strong: rgba(255,255,255,0.12);
-  --text-primary: #FFFFFF; --text-secondary: #D4D4D8; --text-tertiary: #A1A1AA; --text-muted: #71717A;
-  --red-glow: rgba(220,38,38,0.15); --red-100: rgba(220,38,38,0.10); --red-200: rgba(220,38,38,0.18);
-  --red-400: #F87171; --red-500: #EF4444; --red-600: #DC2626;
-  --success: #22C55E; --warning: #EAB308; --danger: #DC2626;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
-  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-html { font-size: 15px; -webkit-font-smoothing: antialiased; }
-body { font-family: var(--font-sans); background: var(--bg-base); color: var(--text-secondary); line-height: 1.6; min-height: 100vh; }
-
-.topbar { position: sticky; top: 0; z-index: 50; background: rgba(7,7,10,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-subtle); }
-.topbar-inner { max-width: 1240px; margin: 0 auto; padding: 14px 28px; display: flex; align-items: center; gap: 14px; }
-.topbar-title { font-size: 0.78rem; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-primary); }
-.topbar-title span { color: var(--red-500); }
-.back-link { margin-left: auto; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; color: var(--text-tertiary); text-decoration: none; border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 6px 12px; transition: all 200ms var(--ease); }
-.back-link:hover { color: var(--text-primary); border-color: var(--border-strong); }
-
-.wrap { max-width: 1240px; margin: 0 auto; padding: 40px 28px 80px; }
-
-.hero { margin-bottom: 40px; }
-.hero-eyebrow { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--red-500); margin-bottom: 12px; }
-.hero-title { font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 800; letter-spacing: -0.03em; color: var(--text-primary); line-height: 1.05; }
-.hero-sub { color: var(--text-tertiary); font-size: 0.92rem; margin-top: 10px; }
-
-.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 40px; }
-.card { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 20px; }
-.kpi-tag { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.12em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
-.kpi-val { font-size: 2rem; font-weight: 750; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1; }
-.kpi-label { font-size: 0.76rem; color: var(--text-tertiary); margin-top: 6px; }
-
-.section { margin-bottom: 44px; }
-.section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle); }
-.section-title { font-size: 1.05rem; font-weight: 650; color: var(--text-primary); letter-spacing: -0.01em; }
-.section-sub { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
-
-.filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
-.search-input {
-  flex: 1; min-width: 200px; background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm); padding: 9px 14px; color: var(--text-primary); font-family: var(--font-sans);
-  font-size: 0.84rem; outline: none; transition: border-color 200ms var(--ease);
-}
-.search-input:focus { border-color: var(--red-200); }
-.search-input::placeholder { color: var(--text-muted); }
-.level-pill {
-  font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-tertiary); background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm); padding: 8px 13px; cursor: pointer; transition: all 200ms var(--ease);
-}
-.level-pill:hover { border-color: var(--border-strong); color: var(--text-primary); }
-.level-pill[aria-pressed="true"] { color: var(--text-primary); border-color: var(--red-200); background: var(--red-100); }
-.country-select {
-  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-sm);
-  padding: 8px 12px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 0.7rem; outline: none;
-}
-
-.feed-item { display: grid; grid-template-columns: 3px 1fr auto; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border-subtle); }
-.feed-esc-bar { border-radius: 2px; background: var(--text-muted); }
-.feed-esc-bar--high { background: var(--danger); } .feed-esc-bar--medium { background: var(--warning); } .feed-esc-bar--low { background: var(--success); }
-.feed-title { font-size: 0.88rem; font-weight: 550; color: var(--text-primary); line-height: 1.4; margin-bottom: 6px; direction: auto; }
-.feed-title a { color: inherit; text-decoration: none; }
-.feed-title a:hover { color: var(--red-400); }
-.feed-title-en { font-size: 0.82rem; color: var(--text-tertiary); line-height: 1.45; margin-bottom: 8px; direction: ltr; text-align: left; font-style: italic; }
-.feed-title-en::before { content: 'EN '; font-style: normal; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.08em; color: var(--text-muted); border: 1px solid var(--border-default); border-radius: 3px; padding: 1px 4px; margin-right: 6px; vertical-align: 1px; }
-.feed-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.feed-tag { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 3px; padding: 2px 7px; }
-.feed-tag--esc-high { color: var(--danger); border-color: var(--red-200); }
-.feed-tag--esc-medium { color: var(--warning); }
-.feed-tag--esc-low { color: var(--success); }
-.feed-tag--country { color: var(--text-secondary); }
-.feed-source { font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-muted); }
-.feed-time { font-family: var(--font-mono); font-size: 0.64rem; color: var(--text-muted); white-space: nowrap; }
-
-.msg { color: var(--text-muted); padding: 30px 0; text-align: center; }
-</style>
-</head>
-<body>
-<div class="topbar"><div class="topbar-inner">
-  <div class="topbar-title">OSINT<span>.</span>CONSOLE</div>
-  <a class="back-link" href="index.html">&larr; DASHBOARD</a>
-</div></div>
-
-<div class="wrap">
-  <div class="hero">
-    <div class="hero-eyebrow">Risk Signals</div>
-    <h1 class="hero-title">High Risk Articles</h1>
-    <div class="hero-sub" id="hero-sub">Loading escalation data across every tracked country&hellip;</div>
-  </div>
-
-  <div class="kpi-row" id="kpi-row"></div>
-
-  <div class="section">
-    <div class="section-head"><div class="section-title">Escalation Feed</div><div class="section-sub" id="feed-count">Articles</div></div>
-    <div class="filter-row">
-      <input class="search-input" id="search-input" type="text" placeholder="Search titles, topic, source, country...">
-      <button class="level-pill" data-level="all" aria-pressed="false">All</button>
-      <button class="level-pill" data-level="high" aria-pressed="false">High</button>
-      <button class="level-pill" data-level="medium" aria-pressed="false">Medium</button>
-      <button class="level-pill" data-level="low" aria-pressed="false">Low</button>
-      <select class="country-select" id="country-select"><option value="">All countries</option></select>
-    </div>
-    <div id="feed"></div>
-  </div>
-</div>
-
-<script>
-// Escapes text before it goes into innerHTML. Titles come from scraped
-// third-party pages, so treating them as trusted markup would let a crafted
-// headline inject script into this page.
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-async function fetchJSON(u) {
-  const r = await fetch(u);
-  if (!r.ok) throw new Error(`${u}: ${r.status}`);
-  return r.json();
-}
-
-let allArticles = [];
-let activeLevel = 'all';
-
-function matchesSearch(article, query) {
-  if (!query) return true;
-  const haystack = [article.title, article.title_en, article.topic, article.source, article.country]
-    .filter(Boolean).join(' ').toLowerCase();
-  return haystack.includes(query);
-}
-
-function applyFilters() {
-  const query = (document.getElementById('search-input').value || '').trim().toLowerCase();
-  const country = document.getElementById('country-select').value;
-  const filtered = allArticles.filter(a => {
-    const level = (a.escalation || 'low').toLowerCase();
-    const levelOk = activeLevel === 'all' || level === activeLevel;
-    const countryOk = !country || a.country === country;
-    return levelOk && countryOk && matchesSearch(a, query);
-  });
-  document.getElementById('feed-count').textContent =
-    filtered.length === allArticles.length ? `${allArticles.length} articles` : `${filtered.length} of ${allArticles.length} articles`;
-  renderFeed(filtered);
-}
-
-function setupFilters(defaultLevel) {
-  document.getElementById('search-input').addEventListener('input', applyFilters);
-  document.getElementById('country-select').addEventListener('change', applyFilters);
-  document.querySelectorAll('.level-pill').forEach(btn => {
-    if (btn.dataset.level === defaultLevel) { btn.setAttribute('aria-pressed', 'true'); activeLevel = defaultLevel; }
-    btn.addEventListener('click', () => {
-      activeLevel = btn.dataset.level;
-      document.querySelectorAll('.level-pill').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
-      applyFilters();
-    });
-  });
-}
-
-function renderKPIs(articles, countryTotal) {
-  const high = articles.filter(a => (a.escalation || '').toLowerCase() === 'high').length;
-  const medium = articles.filter(a => (a.escalation || '').toLowerCase() === 'medium').length;
-  const countrySet = new Set(articles.map(a => a.country).filter(Boolean));
-  const items = [
-    { tag: 'HIGH', val: high, label: 'High escalation' },
-    { tag: 'MEDIUM', val: medium, label: 'Medium escalation' },
-    { tag: 'COUNTRIES', val: countrySet.size, label: `of ${countryTotal} tracked` },
-    { tag: 'TOTAL', val: articles.length, label: 'Articles aggregated' },
-  ];
-  document.getElementById('kpi-row').innerHTML = items.map(k =>
-    `<div class="card"><div class="kpi-tag">${esc(k.tag)}</div><div class="kpi-val">${esc(k.val)}</div><div class="kpi-label">${esc(k.label)}</div></div>`
-  ).join('');
-}
-
-function renderFeed(articles) {
-  if (!articles.length) { document.getElementById('feed').innerHTML = '<div class="msg">No articles match this filter.</div>'; return; }
-  document.getElementById('feed').innerHTML = articles.map(a => {
-    const e = (a.escalation || 'low').toLowerCase();
-    const t = a.published_date ? new Date(a.published_date).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false}) : '';
-    return `<div class="feed-item">
-      <div class="feed-esc-bar feed-esc-bar--${esc(e)}"></div>
-      <div>
-        <div class="feed-title"><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a></div>
-        ${a.title_en ? `<div class="feed-title-en">${esc(a.title_en)}</div>` : ''}
-        <div class="feed-meta">
-          <span class="feed-tag feed-tag--esc-${esc(e)}">${esc(e)}</span>
-          <span class="feed-tag">${esc(a.topic || 'N/A')}</span>
-          ${a.country ? `<span class="feed-tag feed-tag--country">${esc(a.country)}</span>` : ''}
-          <span class="feed-source">${esc(a.source)}</span>
-        </div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0b1119" />
+    <meta
+      name="description"
+      content="Explore Arabic reporting by country, compare escalation signals, search bilingual articles, and build a sourced research brief."
+    />
+    <title>Intelligence Atlas · Arabic OSINT</title>
+    <link rel="stylesheet" href="assets/atlas.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to workspace</a>
+    <header class="topbar">
+      <a class="brand" href="index.html" aria-label="Intelligence Atlas home"
+        ><span class="brand-mark" aria-hidden="true">◎</span
+        ><span
+          >INTELLIGENCE <strong>ATLAS</strong
+          ><small>ARABIC OPEN-SOURCE INTELLIGENCE</small></span
+        ></a
+      >
+      <div class="header-actions">
+        <span id="snapshot-time" class="timestamp">Loading snapshot…</span
+        ><button id="tour-start" class="button">Take a tour ↗</button>
       </div>
-      <div class="feed-time">${esc(t)}</div>
-    </div>`;
-  }).join('');
-}
-
-function levelFromQuery() {
-  const raw = (new URLSearchParams(location.search).get('level') || 'high').toLowerCase();
-  return ['all', 'high', 'medium', 'low'].includes(raw) ? raw : 'high';
-}
-
-async function init() {
-  const defaultLevel = levelFromQuery();
-  try {
-    const index = await fetchJSON('data.json');
-    const countries = index.countries || [];
-
-    const pages = await Promise.allSettled(
-      countries.map(c => fetchJSON(`countries/${encodeURIComponent(c.slug)}.json`))
-    );
-
-    const articles = [];
-    for (const result of pages) {
-      if (result.status !== 'fulfilled') continue;
-      const page = result.value;
-      for (const article of page.articles || []) {
-        articles.push({ ...article, country: page.country });
-      }
-    }
-    articles.sort((a, b) => new Date(b.published_date || 0) - new Date(a.published_date || 0));
-
-    allArticles = articles;
-    const countrySelect = document.getElementById('country-select');
-    [...new Set(articles.map(a => a.country).filter(Boolean))].sort().forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c; opt.textContent = c;
-      countrySelect.appendChild(opt);
-    });
-
-    const updated = new Date(index.generated_at).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false});
-    document.getElementById('hero-sub').textContent =
-      `Aggregated across ${countries.length} tracked countries · updated ${updated}`;
-
-    renderKPIs(articles, countries.length);
-    setupFilters(defaultLevel);
-    applyFilters();
-  } catch (e) {
-    console.error(e);
-    document.getElementById('hero-sub').textContent = 'Could not load risk data.';
-  }
-}
-
-init();
-</script>
-</body>
+    </header>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Workspace navigation">
+        <span class="rail-label">WORKSPACE</span>
+        <nav id="nav">
+          <button
+            data-view="explore"
+            class="nav-item active"
+            aria-current="page"
+          >
+            <span aria-hidden="true">◉</span> Explore</button
+          ><button data-view="search" class="nav-item">
+            <span aria-hidden="true">⌕</span> Archive</button
+          ><button data-view="entities" class="nav-item">
+            <span aria-hidden="true">⌘</span> Entities</button
+          ><button data-view="saved" class="nav-item">
+            <span aria-hidden="true">▤</span> Research board
+            <small id="saved-count">0</small>
+          </button>
+        </nav>
+        <div class="rail-bottom">
+          <button id="method-open" class="text-button">How it works ↗</button
+          ><a href="engine.html#review-container">Entity review ↗</a
+          ><a
+            href="https://github.com/gdayoub/arabic-osint-intelligence-platform"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Source code ↗</a
+          ><span class="rail-label"
+            >PUBLIC REPORTING.<br />TRACEABLE SOURCES.</span
+          >
+        </div>
+      </aside>
+      <main id="main">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow" id="view-eyebrow">
+              THE WORLD, THROUGH ARABIC REPORTING
+            </p>
+            <h1 id="view-title">Explore the signals.</h1>
+          </div>
+          <button id="share" class="text-button">Copy view link ↗</button>
+        </div>
+        <div id="load-status" class="notice" role="status">
+          Loading reporting and geography…
+        </div>
+        <form id="filters" class="filterbar" role="search">
+          <label class="search-field"
+            ><span aria-hidden="true">⌕</span
+            ><input
+              id="query"
+              type="search"
+              placeholder="Search names, places, reporting…"
+              aria-label="Search reporting in Arabic or English"
+            /><kbd>/</kbd></label
+          ><label class="select-wrap"
+            ><span>Source</span
+            ><select id="source">
+              <option value="">All sources</option>
+            </select></label
+          ><label class="select-wrap"
+            ><span>Topic</span
+            ><select id="topic">
+              <option value="">All topics</option>
+            </select></label
+          ><label class="select-wrap"
+            ><span>Escalation</span
+            ><select id="level">
+              <option value="">All levels</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select></label
+          ><button type="button" id="reset" class="text-button">Reset</button>
+        </form>
+        <div class="timebar">
+          <div class="date-presets" id="date-presets">
+            <button data-days="0" class="chip">All dates</button
+            ><button data-days="7" class="chip">7 days</button
+            ><button data-days="30" class="chip">30 days</button>
+          </div>
+          <label>From <input id="date-from" type="date" /></label
+          ><label>To <input id="date-to" type="date" /></label
+          ><span class="subtle">Publication dates · UTC</span>
+        </div>
+        <div id="active-filters" class="active-filters"></div>
+        <section id="explore-view" class="view">
+          <div class="atlas-grid">
+            <section
+              class="globe-panel"
+              aria-label="Geographic reporting signals"
+            >
+              <div class="panel-heading">
+                <div>
+                  <span class="eyebrow">GEOGRAPHIC OVERVIEW</span>
+                  <h2 id="globe-title">A different perspective.</h2>
+                </div>
+                <div class="segmented">
+                  <button id="globe-mode" aria-pressed="true">Globe</button
+                  ><button id="list-mode" aria-pressed="false">List</button>
+                </div>
+              </div>
+              <div id="globe-stage">
+                <div
+                  id="globe"
+                  role="img"
+                  aria-label="Globe colored by high-escalation article share. Use the country list for keyboard selection."
+                ></div>
+                <div id="globe-loading" class="globe-message">
+                  Preparing the globe…
+                </div>
+                <button
+                  id="globe-reset"
+                  class="globe-reset"
+                  aria-label="Reset globe camera"
+                >
+                  ⌾</button
+                ><span class="globe-hint"
+                  >Drag to explore · select an area</span
+                >
+              </div>
+              <div id="country-list" class="country-list" hidden></div>
+              <div class="globe-legend">
+                <div>
+                  <span class="legend-scale"></span
+                  ><span
+                    >0%
+                    <span class="subtle">high-escalation share</span> 100%</span
+                  >
+                </div>
+                <span class="subtle"
+                  ><i class="no-data-dot"></i>No reporting</span
+                ><button id="map-info" class="text-button">
+                  About this map
+                </button>
+              </div>
+            </section>
+            <aside
+              id="briefing"
+              class="briefing-panel"
+              aria-label="Country briefing"
+            ></aside>
+          </div>
+          <section class="timeline-panel">
+            <div class="section-heading">
+              <h2>Reporting over time</h2>
+              <span class="subtle" id="timeline-caption"
+                >Select a day to explore its articles</span
+              >
+            </div>
+            <div id="timeline" class="timeline"></div>
+          </section>
+          <section id="comparison" class="comparison-panel" hidden></section>
+        </section>
+        <section id="entities-view" class="view" hidden>
+          <div id="entity-results" class="entity-grid"></div>
+        </section>
+        <section id="saved-view" class="view" hidden>
+          <div class="board-toolbar">
+            <p>
+              Saved in this browser. Export your notes to keep a portable copy.
+            </p>
+            <div>
+              <button id="export-notes" class="button">Export notes</button
+              ><button id="export-brief" class="button accent">
+                Print briefing ↗
+              </button>
+            </div>
+          </div>
+          <div id="saved-results"></div>
+        </section>
+        <section id="reporting-section">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow" id="feed-eyebrow">FOLLOW THE EVIDENCE</span>
+              <h2 id="feed-title">Latest reporting</h2>
+            </div>
+            <div class="feed-controls">
+              <span id="result-count" class="subtle" aria-live="polite"></span
+              ><label class="sr-only" for="sort">Sort articles</label
+              ><select id="sort">
+                <option value="newest">Newest published</option>
+                <option value="high">High escalation first</option>
+              </select>
+            </div>
+          </div>
+          <div id="article-results"></div>
+          <button id="load-more" class="button load-more" hidden>
+            Show more articles
+          </button>
+        </section>
+        <footer>
+          <span>Arabic originals. Linked sources. A clearer view.</span
+          ><button id="demo-toggle" class="text-button">
+            Open example snapshot
+          </button>
+        </footer>
+      </main>
+    </div>
+    <dialog id="detail-dialog">
+      <div class="dialog-bar">
+        <span class="eyebrow" id="dialog-label">EVIDENCE</span
+        ><button
+          class="icon-button"
+          id="detail-close"
+          aria-label="Close details"
+        >
+          ×
+        </button>
+      </div>
+      <div id="detail-content"></div>
+    </dialog>
+    <dialog id="tour-dialog">
+      <div class="dialog-bar">
+        <span class="eyebrow" id="tour-step"></span
+        ><button id="tour-close" class="icon-button" aria-label="Close tour">
+          ×
+        </button>
+      </div>
+      <h2 id="tour-title"></h2>
+      <p id="tour-text"></p>
+      <div class="tour-actions">
+        <button id="tour-back" class="text-button">Back</button
+        ><button id="tour-next" class="button accent">Next →</button>
+      </div>
+    </dialog>
+    <div id="toast" role="status" class="toast" hidden></div>
+    <script type="module" src="assets/atlas.mjs"></script>
+  </body>
 </html>

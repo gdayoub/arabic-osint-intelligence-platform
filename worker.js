@@ -14,7 +14,7 @@ export default {
     const response = await env.ASSETS.fetch(request);
     const url = new URL(request.url);
 
-    if (url.pathname === "/data.json") {
+    if (url.pathname === "/data.json" || /^\/countries\/[a-z0-9_-]+\.json$/.test(url.pathname)) {
       const headers = new Headers(response.headers);
       headers.set("Access-Control-Allow-Origin", "*");
       return new Response(response.body, {
