@@ -1,0 +1,145 @@
+{
+  "articles": [
+    {
+      "collected_at": "2026-10-11T12:00:00+00:00",
+      "country": "Syria",
+      "entity_ids": [
+        "fx-person-1"
+      ],
+      "escalation": "high",
+      "id": "fx-1",
+      "published_date": "2026-10-11T09:00:00+00:00",
+      "source": "synthetic-source-a",
+      "title": "[تجريبي] خبر <script>alert('x')</script> & مكتبة محمد الأحمد",
+      "title_en": "[SYNTHETIC] Library report <not markup>",
+      "topic": "Culture",
+      "url": "https://example.invalid/osint-fixture/fx-1"
+    },
+    {
+      "collected_at": "2026-10-11T13:00:00+00:00",
+      "country": "Syria",
+      "entity_ids": [
+        "fx-person-1",
+        "fx-person-2"
+      ],
+      "escalation": "medium",
+      "id": "fx-2",
+      "published_date": null,
+      "source": "synthetic-source-b",
+      "title": "[تجريبي] محمد الأحمد وعلي حسن في المكتبة",
+      "title_en": null,
+      "topic": "Culture",
+      "url": "https://example.invalid/osint-fixture/fx-2"
+    },
+    {
+      "collected_at": "2026-10-10T11:00:00+00:00",
+      "country": "Lebanon",
+      "entity_ids": [
+        "fx-person-2"
+      ],
+      "escalation": "low",
+      "id": "fx-3",
+      "published_date": "2026-10-10T10:00:00+00:00",
+      "source": "synthetic-source-b",
+      "title": "[تجريبي] برنامج القراءة مع علي حسن",
+      "title_en": "[SYNTHETIC] Reading programme",
+      "topic": "Education",
+      "url": "https://example.invalid/osint-fixture/fx-3"
+    },
+    {
+      "collected_at": null,
+      "country": "Lebanon",
+      "entity_ids": [
+        "fx-person-2"
+      ],
+      "escalation": "high",
+      "id": "fx-4",
+      "published_date": "2026-10-09T10:00:00+00:00",
+      "source": "synthetic-source-c",
+      "title": "[تجريبي] علي حسن يناقش التقرير",
+      "title_en": null,
+      "topic": "Politics",
+      "url": "https://example.invalid/osint-fixture/fx-4"
+    },
+    {
+      "collected_at": null,
+      "country": null,
+      "entity_ids": [
+        "fx-org-1"
+      ],
+      "escalation": "unknown",
+      "id": "fx-5",
+      "published_date": null,
+      "source": "synthetic-source-c",
+      "title": "[تجريبي] مكتبة الاختبار دون تاريخ",
+      "title_en": null,
+      "topic": "Uncategorized",
+      "url": null
+    },
+    {
+      "collected_at": "2026-10-12T08:00:00+00:00",
+      "country": null,
+      "entity_ids": [
+        "fx-org-1"
+      ],
+      "escalation": "unreviewed",
+      "id": "fx-6",
+      "published_date": "2026-10-12T07:00:00+00:00",
+      "source": "synthetic-source-a",
+      "title": "[تجريبي] 🗞️ مكتبة الاختبار وتسمية جديدة",
+      "title_en": null,
+      "topic": "Research",
+      "url": "https://example.invalid/osint-fixture/fx-6"
+    }
+  ],
+  "atlas_version": 1,
+  "classification": {
+    "name": "synthetic_fixture_classifier",
+    "version": "1.0.0"
+  },
+  "complete": true,
+  "entities": [
+    {
+      "id": "fx-org-1",
+      "name": "مكتبة الاختبار",
+      "name_en": "[SYNTHETIC] Test Library",
+      "object_type": "organization",
+      "romanizations": [
+        "mktbh alakhtbar"
+      ],
+      "surface_forms": [
+        "مكتبة الاختبار"
+      ]
+    },
+    {
+      "id": "fx-person-1",
+      "name": "محمد الأحمد",
+      "name_en": null,
+      "object_type": "person",
+      "romanizations": [
+        "muhammad ahmad"
+      ],
+      "surface_forms": [
+        "محمد الأحمد",
+        "مُحَمَّد الأحمد"
+      ]
+    },
+    {
+      "id": "fx-person-2",
+      "name": "علي حسن",
+      "name_en": null,
+      "object_type": "person",
+      "romanizations": [
+        "ali hasan"
+      ],
+      "surface_forms": [
+        "علي حسن"
+      ]
+    }
+  ],
+  "entity_id_scope": "snapshot_local",
+  "generated_at": "2026-10-12T12:00:00+00:00",
+  "scope": "current_processed_live_documents",
+  "snapshot_id": "sha256:d12df6a19d908520b7f72b6cd14bf2d3287b82b3e62873e5dfde3d6a100e1ddc",
+  "translation_scope": "cached_machine_translation"
+}

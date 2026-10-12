@@ -1,0 +1,22 @@
+{
+  "backend_branch": "codex/osint-backend-foundations-2026-10-12",
+  "backend_code_sha": "8d7e241a8073a706900ea81f744a5a879cbe9132",
+  "backend_pr": "https://github.com/gdayoub/arabic-osint-intelligence-platform/pull/38",
+  "backend_repository": "gdayoub/arabic-osint-intelligence-platform",
+  "backend_source_sha256": {
+    "contracts/dashboard/1.0.0/dashboard.types.ts": "415a370f522cc6da1825087dd4cdcc65019b9d6f4649b69722374361286e862f",
+    "scripts/bake_atlas.py": "d3a5732372fc235c53b24d835c6d218b166a2600643f11044f2c9c18dcc04859",
+    "src/contracts/atlas.py": "8312ba9c39bf8c6d4dd335ab085d7bb148a11fa89bf13818701777db6e688627",
+    "src/contracts/dashboard.py": "3a2d7092488ef9fd5c84301bf4f0d024a30ff8149b8dd6a5b917369c32d90a0b",
+    "src/lang/arabic.py": "ed7aaf3083fdc82a2d20144b5cd440a828bcf385d550756305c3d154877f42a1",
+    "src/lang/english.py": "65329a0782d1fd36b2672fbaab737b25893259507daa969e2e8c7cc20175bb59",
+    "src/lang/segmentation.py": "9c969268d0e4b22d71f77060e40f02092c2f37f03d5cf97aa30776d35b13ff44",
+    "src/search/evidence.py": "08df8e7baa91d5bd9cdc38e5ea1ea3e02e894ab688a413c65184a0a3cb73c0ad",
+    "src/search/evidence_cli.py": "f68357d556d61e4a79872e7f9b5709179a268cafb1379873e393f0065b03d635",
+    "src/search/name_matching.py": "4f0d8b375f11cf646ff891663b23680dabb8a612a86b44109a83c17869863000",
+    "worker.js": "a8afdd8f59e0356daf6a7031826526742b17759227cd371684e8f9ce00a510b2"
+  },
+  "deployed_capability_note": "This pins reviewed source code, not a deployment. Public archive activation is off; evidence is private/offline.",
+  "frontend_baseline_sha": "987e0473078073f7862c704aedc67f1a64080ab5",
+  "frontend_repository": "gdayoub/george-portfolio"
+}

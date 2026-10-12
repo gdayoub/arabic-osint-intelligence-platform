@@ -1,0 +1,271 @@
+{
+  "$defs": {
+    "AtlasArticle": {
+      "additionalProperties": false,
+      "properties": {
+        "collected_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Collected At"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Country"
+        },
+        "entity_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Entity Ids",
+          "type": "array"
+        },
+        "escalation": {
+          "minLength": 1,
+          "title": "Escalation",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "published_date": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Published Date"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "title_en": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Title En"
+        },
+        "topic": {
+          "minLength": 1,
+          "title": "Topic",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s\\\\\"'<>`]+$",
+              "type": "string",
+              "x-allowed-schemes": [
+                "http",
+                "https"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Url"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "title_en",
+        "source",
+        "url",
+        "topic",
+        "escalation",
+        "country",
+        "published_date",
+        "collected_at",
+        "entity_ids"
+      ],
+      "title": "AtlasArticle",
+      "type": "object"
+    },
+    "AtlasClassification": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "AtlasClassification",
+      "type": "object"
+    },
+    "AtlasEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "name_en": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name En"
+        },
+        "object_type": {
+          "minLength": 1,
+          "title": "Object Type",
+          "type": "string"
+        },
+        "romanizations": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Romanizations",
+          "type": "array"
+        },
+        "surface_forms": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Surface Forms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "name_en",
+        "object_type",
+        "surface_forms",
+        "romanizations"
+      ],
+      "title": "AtlasEntity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articles": {
+      "items": {
+        "$ref": "#/$defs/AtlasArticle"
+      },
+      "title": "Articles",
+      "type": "array"
+    },
+    "atlas_version": {
+      "const": 1,
+      "title": "Atlas Version",
+      "type": "integer"
+    },
+    "classification": {
+      "$ref": "#/$defs/AtlasClassification"
+    },
+    "complete": {
+      "const": true,
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "entities": {
+      "items": {
+        "$ref": "#/$defs/AtlasEntity"
+      },
+      "title": "Entities",
+      "type": "array"
+    },
+    "entity_id_scope": {
+      "const": "snapshot_local",
+      "title": "Entity Id Scope",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "scope": {
+      "const": "current_processed_live_documents",
+      "title": "Scope",
+      "type": "string"
+    },
+    "snapshot_id": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "translation_scope": {
+      "const": "cached_machine_translation",
+      "title": "Translation Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "atlas_version",
+    "generated_at",
+    "snapshot_id",
+    "complete",
+    "scope",
+    "entity_id_scope",
+    "translation_scope",
+    "classification",
+    "articles",
+    "entities"
+  ],
+  "title": "AtlasSnapshot",
+  "type": "object"
+}

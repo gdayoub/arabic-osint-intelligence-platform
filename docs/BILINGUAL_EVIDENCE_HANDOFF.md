@@ -128,8 +128,9 @@ standard-library-only CLI subprocess.
 ## Intentionally unfinished production work
 
 This is not connected to the deployed dashboard, the separate unpublished
-Evidence Lab, any API, or a production database. No code, asset, excerpt,
-schema migration, or stable-identity activation was deployed or published.
+Evidence Lab, any API, or a production database. No dashboard/evidence
+deployment, excerpt publication, schema migration, or stable-identity
+activation is included.
 
 Before production use, an explicit next checkpoint must resolve:
 

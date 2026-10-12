@@ -1,0 +1,15 @@
+{
+  "articles": [],
+  "atlas_version": 1,
+  "classification": {
+    "name": "synthetic_fixture_classifier",
+    "version": "1.0.0"
+  },
+  "complete": true,
+  "entities": [],
+  "entity_id_scope": "snapshot_local",
+  "generated_at": "2026-10-12T12:00:00+00:00",
+  "scope": "current_processed_live_documents",
+  "snapshot_id": "sha256:76b754ced1cb60e9c5e9f981ebd1ff0cd741734160bcad248ff7c9c1c7720d57",
+  "translation_scope": "cached_machine_translation"
+}

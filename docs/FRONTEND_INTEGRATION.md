@@ -2,10 +2,15 @@
 
 This backend batch targets OSINT `main` at
 `3a9bd6978fb57573ad323b8f6dcb81ccc8492922`. It is a separate draft for review.
-The current console on `main` is the integration baseline. The frontend work
-has not started; the frontend agent needs these fixed contracts before building.
-No active frontend branch needs to be found or reconciled first. End-to-end
-compatibility still needs verification when the consumer is implemented.
+The current console on `main` is the integration baseline. These fixed
+contracts are the target for the separate frontend implementation. No unknown
+frontend branch needs to be found or reconciled first. End-to-end compatibility
+still needs verification when the consumer is implemented.
+
+Start with [the frontend build contract](frontend-handoff/FRONTEND_AGENT_PROMPT.md)
+and its adjacent `frontend-contract/` bundle. The bundle pins the backend code
+revision, carries synthetic public/evidence examples, and includes a read-only
+validator. It does not enable fixtures or private evidence in production.
 
 ## Existing dashboard consumers
 

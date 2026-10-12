@@ -1,0 +1,25 @@
+{
+  "data_kind": "synthetic_fixture",
+  "expected": {
+    "archive_entities": 3,
+    "archive_entity_name_en_available": 1,
+    "archive_title_en_available": 2,
+    "collection_undated": 2,
+    "country_unassigned": 2,
+    "current_processed_documents": 6,
+    "publication_undated": 2,
+    "raw_documents": 7,
+    "recent_sample": 4,
+    "review_pairs": 1
+  },
+  "generated_at_policy": "Fixed test clock; not a current-news timestamp.",
+  "public_use": false,
+  "scope": "frontend rendering and adapter contract tests",
+  "separate_corpora": "Archive fx-* IDs and numeric offline-evidence IDs are unrelated; do not join them.",
+  "warning": "LOCAL TEST DATA ONLY. Every article, entity, classifier label and translation display value in this bundle is synthetic. Never load as a production fallback.",
+  "wire_contracts": {
+    "atlas": "1.0.0 / atlas_version 1",
+    "dashboard": "1.0.0 / schema_version 1",
+    "evidence": "offline-evidence-v1 / reader 1.0.0"
+  }
+}

@@ -1,0 +1,203 @@
+{
+  "countries": [
+    {
+      "count": 2,
+      "country": "Lebanon",
+      "slug": "lebanon"
+    },
+    {
+      "count": 2,
+      "country": "Syria",
+      "slug": "syria"
+    }
+  ],
+  "daily": [
+    {
+      "count": 1,
+      "date": "2026-10-10"
+    },
+    {
+      "count": 2,
+      "date": "2026-10-11"
+    },
+    {
+      "count": 2,
+      "date": "2026-10-12"
+    }
+  ],
+  "entities": {
+    "top": {
+      "organization": [
+        {
+          "count": 2,
+          "name": "مكتبة الاختبار",
+          "surface_forms": [
+            "مكتبة الاختبار"
+          ]
+        }
+      ],
+      "person": [
+        {
+          "count": 2,
+          "name": "محمد الأحمد",
+          "surface_forms": [
+            "محمد الأحمد",
+            "مُحَمَّد الأحمد"
+          ]
+        },
+        {
+          "count": 4,
+          "name": "علي حسن",
+          "surface_forms": [
+            "علي حسن"
+          ]
+        }
+      ]
+    },
+    "total": 3
+  },
+  "escalation": {
+    "escalation": {
+      "high": 2,
+      "low": 1,
+      "medium": 1,
+      "unknown": 1,
+      "unreviewed": 1
+    }
+  },
+  "generated_at": "2026-10-12T12:00:00+00:00",
+  "mentions": {
+    "top": {
+      "organization": [
+        {
+          "count": 2,
+          "name": "مكتبة الاختبار"
+        }
+      ],
+      "person": [
+        {
+          "count": 2,
+          "name": "محمد الأحمد"
+        },
+        {
+          "count": 4,
+          "name": "علي حسن"
+        }
+      ]
+    },
+    "total": 8
+  },
+  "recent": [
+    {
+      "ai_summary": null,
+      "country": "Syria",
+      "escalation": "high",
+      "processed_at": "2026-10-11T12:00:00+00:00",
+      "published_date": "2026-10-11T09:00:00+00:00",
+      "source": "synthetic-source-a",
+      "title": "[تجريبي] خبر <script>alert('x')</script> & مكتبة محمد الأحمد",
+      "title_en": "[SYNTHETIC] Library report <not markup>",
+      "topic": "Culture",
+      "url": "https://example.invalid/osint-fixture/fx-1"
+    },
+    {
+      "ai_summary": null,
+      "country": "Lebanon",
+      "escalation": "low",
+      "processed_at": "2026-10-10T11:00:00+00:00",
+      "published_date": "2026-10-10T10:00:00+00:00",
+      "source": "synthetic-source-b",
+      "title": "[تجريبي] برنامج القراءة مع علي حسن",
+      "title_en": "[SYNTHETIC] Reading programme",
+      "topic": "Education",
+      "url": "https://example.invalid/osint-fixture/fx-3"
+    },
+    {
+      "ai_summary": null,
+      "country": "Lebanon",
+      "escalation": "high",
+      "processed_at": null,
+      "published_date": "2026-10-09T10:00:00+00:00",
+      "source": "synthetic-source-c",
+      "title": "[تجريبي] علي حسن يناقش التقرير",
+      "title_en": null,
+      "topic": "Politics",
+      "url": "https://example.invalid/osint-fixture/fx-4"
+    },
+    {
+      "ai_summary": null,
+      "country": null,
+      "escalation": null,
+      "processed_at": "2026-10-12T11:00:00+00:00",
+      "published_date": null,
+      "source": "synthetic-source-a",
+      "title": "[تجريبي] مقال غير مصنف",
+      "title_en": null,
+      "topic": null,
+      "url": null
+    }
+  ],
+  "review_queue": {
+    "items": [
+      {
+        "distance": 0.02,
+        "features": {
+          "name_similarity": 0.92,
+          "same_source": 0.0
+        },
+        "id": 7,
+        "left": {
+          "mention_id": 21,
+          "source": "synthetic-source-a",
+          "text": "محمد الأحمد",
+          "title": "[تجريبي] خبر <script>alert('x')</script> & مكتبة محمد الأحمد",
+          "url": "https://example.invalid/osint-fixture/fx-1"
+        },
+        "object_type": "person",
+        "right": {
+          "mention_id": 31,
+          "source": "synthetic-source-b",
+          "text": "مُحَمَّد الأحمد",
+          "title": "[تجريبي] محمد الأحمد وعلي حسن في المكتبة",
+          "url": "https://example.invalid/osint-fixture/fx-2"
+        },
+        "score": 0.58,
+        "threshold": 0.6
+      }
+    ]
+  },
+  "schema_version": 1,
+  "stats": {
+    "sources": {
+      "synthetic-source-a": 3,
+      "synthetic-source-b": 2,
+      "synthetic-source-c": 2
+    },
+    "total_processed": 6,
+    "total_raw": 7
+  },
+  "topics": {
+    "topics": [
+      {
+        "count": 2,
+        "topic": "Culture"
+      },
+      {
+        "count": 1,
+        "topic": "Education"
+      },
+      {
+        "count": 1,
+        "topic": "Politics"
+      },
+      {
+        "count": 1,
+        "topic": "Research"
+      },
+      {
+        "count": 1,
+        "topic": "Uncategorized"
+      }
+    ]
+  }
+}

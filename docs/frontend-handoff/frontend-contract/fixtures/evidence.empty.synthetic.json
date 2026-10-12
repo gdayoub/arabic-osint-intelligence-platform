@@ -1,0 +1,21 @@
+{
+  "access_scope": "private_local_only",
+  "data_kind": "synthetic_fixture",
+  "entity_id_scope": "snapshot_local",
+  "has_more_entities": false,
+  "limits": {
+    "evidence_per_entity": 3,
+    "results": 20,
+    "span_characters": 280
+  },
+  "matched_entity_count": 0,
+  "query": "zzzz-no-such-name",
+  "reader": {
+    "name": "offline_evidence_search",
+    "version": "1.0.0"
+  },
+  "results": [],
+  "schema_version": "offline-evidence-v1",
+  "scope": "caller_supplied_snapshot",
+  "target_language": "en"
+}

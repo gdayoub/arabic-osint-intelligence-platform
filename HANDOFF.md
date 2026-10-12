@@ -2,10 +2,13 @@
 
 Built against `3a9bd6978fb57573ad323b8f6dcb81ccc8492922` on 2026-10-12.
 This batch combines five backend/evaluation improvements. It is prepared as a
-separate draft PR; no deployment or feature activation is included. The frontend
-work has not started and can use the current console on main as its baseline.
+separate draft PR; no deployment or feature activation is included. The separate
+frontend implementation can use the current console on main as its baseline.
 See [the frontend integration checkpoint](docs/FRONTEND_INTEGRATION.md) for the
 fixed interfaces, unchanged v1 contract, and consumer/activation readiness gates.
+The [frontend build contract](docs/frontend-handoff/FRONTEND_AGENT_PROMPT.md)
+provides the fixed implementation slice, consumer types, validated synthetic
+fixtures, and a runnable contract-bundle check.
 
 ## What is usable
 
@@ -115,14 +118,20 @@ collector can carry and verify the archive, as covered by an integration test.
 - Arabic/Latin fixture commands work with `python -S`; every returned source
   and mention slice/hash is verified. No real API, database service, R2, or
   paid translation was used.
-- Tested on Python **3.12.14** and Node **24.19.0**, with every version in
-  `requirements.txt` matched exactly. No dependency was added.
+- Tested locally on Python **3.12.14** and Node **24.19.0**, with every version
+  in `requirements.txt` matched exactly. No dependency was added.
+- The first published code revision, `8d7e241a8073a706900ea81f744a5a879cbe9132`,
+  passed [GitHub PR CI](https://github.com/gdayoub/arabic-osint-intelligence-platform/actions/runs/38297533272):
+  Python 3.11 unit tests **698 passed, 1 skipped, 2 expected failures**;
+  disposable PostgreSQL migration tests **6 passed**. This does not establish
+  PostgreSQL archive isolation or a frontend build.
 
 The seven skips are six PostgreSQL migration tests and the optional real
 transformer test. Two known Arabic normalization gaps remain expected failures.
 Four existing Python 3.12 SQLite datetime deprecation warnings remain.
-PostgreSQL archive isolation, optional ML inference, Python 3.11 CI, portfolio
-consumer build, and production behavior were not validated here.
+PostgreSQL archive isolation, optional ML inference, portfolio consumer build,
+and production behavior were not validated here. The separate PR CI result
+above covers Python 3.11 and the six disposable PostgreSQL migration checks.
 
 Re-run local checks with no service credentials or `.env` file configured:
 

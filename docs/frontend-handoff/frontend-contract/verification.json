@@ -1,0 +1,28 @@
+{
+  "verified_at_utc": "2026-10-12T19:33:21+00:00",
+  "backend_code_sha": "8d7e241a8073a706900ea81f744a5a879cbe9132",
+  "python": "3.12.14",
+  "pydantic": "2.12.5",
+  "checks": [
+    {
+      "name": "validate_bundle.py --backend <pinned backend checkout>",
+      "status": "passed",
+      "coverage": "5 exact committed source copies; nonempty and empty dashboard/country/archive invariants; 8 evidence outputs regenerated; expected counts, exact Unicode slices and SHA-256 hashes; tampering rejection; 11 pinned source-file hashes"
+    },
+    {
+      "name": "python scripts/generate_dashboard_contract.py --check",
+      "status": "passed"
+    },
+    {
+      "name": "node --experimental-strip-types frontend-contract/types/*.ts (each file)",
+      "status": "passed",
+      "coverage": "All 4 TypeScript files parse under Node 24.19.0; syntax check only, not tsc type checking"
+    }
+  ],
+  "not_performed": [
+    "Frontend implementation, full TypeScript type checking, frontend build, or browser QA",
+    "Current public endpoint fetch, CORS or deployment verification",
+    "Real evidence export or translation generation"
+  ],
+  "synthetic_only": true
+}
