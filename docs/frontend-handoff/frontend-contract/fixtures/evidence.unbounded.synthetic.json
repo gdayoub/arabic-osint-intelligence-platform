@@ -1,0 +1,151 @@
+{
+  "access_scope": "private_local_only",
+  "data_kind": "synthetic_fixture",
+  "entity_id_scope": "snapshot_local",
+  "has_more_entities": false,
+  "limits": {
+    "evidence_per_entity": 3,
+    "results": 20,
+    "span_characters": 5
+  },
+  "matched_entity_count": 1,
+  "query": "muhammad ahmad",
+  "reader": {
+    "name": "offline_evidence_search",
+    "version": "1.0.0"
+  },
+  "results": [
+    {
+      "entity_id": 1,
+      "evidence": [],
+      "evidence_coverage": {
+        "active_linked_mentions": 2,
+        "has_more_windows": false,
+        "mentions_exceeding_span_limit": 2,
+        "status": "no_bounded_live_evidence",
+        "unique_windows": 0
+      },
+      "matched_names": [
+        {
+          "match_kind": "exact",
+          "name": {
+            "evidence_mention_id": null,
+            "kind": "romanization",
+            "language": "ar-Latn",
+            "producer": "ArabicAdapter.romanize",
+            "producer_version": null,
+            "text": "muhammad ahmad",
+            "verification_ref": null,
+            "verifier": null
+          }
+        }
+      ],
+      "names": [
+        {
+          "evidence_mention_id": null,
+          "kind": "original",
+          "language": "ar",
+          "producer": null,
+          "producer_version": null,
+          "text": "محمد الأحمد",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "mohammed ahmed",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "mohammed ahmad",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "muhammad ahmed",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "muhammad ahmad",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "mohamed ahmed",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "mohamed ahmad",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "mohammad ahmed",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": null,
+          "kind": "romanization",
+          "language": "ar-Latn",
+          "producer": "ArabicAdapter.romanize",
+          "producer_version": null,
+          "text": "mohammad ahmad",
+          "verification_ref": null,
+          "verifier": null
+        },
+        {
+          "evidence_mention_id": 1,
+          "kind": "verified_alias",
+          "language": "en",
+          "producer": null,
+          "producer_version": null,
+          "text": "Mohammed al-Ahmad",
+          "verification_ref": "fixture:example-alias-attestation-only",
+          "verifier": "synthetic-fixture-author"
+        }
+      ],
+      "object_type": "person"
+    }
+  ],
+  "schema_version": "offline-evidence-v1",
+  "scope": "caller_supplied_snapshot",
+  "target_language": "en"
+}

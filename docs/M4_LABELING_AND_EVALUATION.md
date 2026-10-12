@@ -44,9 +44,21 @@ blocker discarded. We need both:
 | `audit_holdout` | independently sampled blocking-surviving pairs | Score a candidate once; never train on it |
 | `blocking_recall_gold` | pre-blocking labeled pairs or labeled entity clusters | Estimate blocking recall only |
 
-Training and audit snapshots are rejected if they share a pair ID **or** a
-normalized name/entity group. Grouped splits use the group as the unit, so a
-frequent name cannot leak a near-duplicate into both sides.
+Training and audit snapshots are rejected if they share a pair ID, an opaque
+`group_id`, **or either endpoint's normalized name/entity group**. Keep the
+manifest's `left_group` and `right_group` on every training/audit row. For
+example, training pair A–B and audit pair A–C overlap even though their
+combined pair group IDs differ. Unresolved rows also count for this check.
+
+Grouped splits keep connected components together: A–B, B–C, and C–D must
+all be on the same side. Rows sharing an opaque `group_id` also stay
+together. The requested test fraction applies to components, so the number
+of rows in each partition can be uneven. A single connected component
+cannot be safely split; collect independent groups rather than falling back
+to a row-level split. The returned `train_groups` and `test_groups` still
+list the original opaque group IDs. A seed reproduces this component-based
+algorithm; its partition may differ from an older row-group split with the
+same seed.
 
 ## Create a deterministic review sample
 
@@ -126,6 +138,26 @@ step must create a **new** scorer artifact with:
 - frozen audit set ID; and
 - precision, recall, PR-AUC, calibration, and model-originated merge metadata.
 
+### Existing snapshot compatibility
+
+The JSON schema version remains `1.0.0`. Sampling manifests already contain
+`left_group` and `right_group`, and frozen snapshots already preserve supplied
+row fields. Loading now retains these endpoints in the parsed `LabeledPair`.
+If either endpoint field is supplied, both must be non-empty strings.
+
+Older snapshots containing only `group_id` still load with their original
+digest. However, an opaque ID does not prove which names occur in the pair.
+They now fail group-safe splitting, and a supplied training/audit pair of
+snapshots with missing endpoints yields `not_proven` with re-export guidance.
+The checker never guesses endpoints by splitting `group_id` on ` | `;
+literal names and opaque IDs may themselves contain that text.
+
+To refresh an old dataset, recover endpoint groups from its original sampling
+manifest by pair ID and freeze a **new** snapshot ID/path. Do not edit or
+rehash the old frozen file in place. A new candidate artifact must reference
+the new snapshot IDs/digests. If endpoint evidence cannot be recovered, keep
+the dataset for historical inspection, not proof of held-out performance.
+
 Then run:
 
 ```bash
@@ -151,6 +183,17 @@ candidate universe:
 The report includes candidate, exact-match, and gazetteer metrics; PR-AUC and
 calibration; model-only predicted matches; pre-blocking blocking recall; and
 paired 95% bootstrap F1 intervals against both deterministic baselines.
+
+The existing `pr_auc` field means **non-interpolated average precision**:
+sum each increase in recall times the precision at that score threshold.
+All rows with an equal score enter together. Thus one positive and one
+negative both scored 0.5 give AP 0.5 in either row order. This matters for
+the exact-match and gazetteer baselines, whose scores are only zero or one.
+No-positive datasets retain `null` AP because positive recall is undefined.
+Reports produced before the tie-handling correction may have order-dependent
+AP; regenerate them under a new immutable report path before comparing
+candidates. This is a metric correctness fix, not evidence of improved model
+performance. See [ADR 0037](adr/0037-tie-safe-and-name-disjoint-evaluation.md).
 
 ## Gate, not a victory lap
 

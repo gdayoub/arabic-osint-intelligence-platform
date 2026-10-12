@@ -8,11 +8,13 @@ additive, not a migration of the old one. Rollback is "run the old command."
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -303,6 +305,11 @@ def run_core_ingestion(
         if on_source_started is not None:
             on_source_started(scraper.source_name)
 
+        # Custom scraper aliases can contain untrusted text. Keep only a
+        # stable digest in these diagnostics, never article or config values.
+        source_ref = hashlib.sha256(scraper.source_name.encode("utf-8")).hexdigest()[:16]
+        scrape_started = monotonic()
+        logger.info("ingest_source_scrape_started source_ref=%s", source_ref)
         articles = []
         scrape_stats: dict[str, Any] = {}
         source_attempted = 0
@@ -312,12 +319,17 @@ def run_core_ingestion(
             articles = scraper.scrape(limit=limit)
             scrape_stats = scraper.get_last_scrape_stats()
             logger.info(
-                "Source %s returned %d articles", scraper.source_name, len(articles)
+                "ingest_source_returned source_ref=%s elapsed_seconds=%.6f yielded_count=%d",
+                source_ref, monotonic() - scrape_started, len(articles),
             )
         except Exception:
-            # Detailed exceptions stay in the private job log. The returned
-            # result is deliberately limited to a closed code.
-            logger.exception("Source scrape failed for %s", scraper.source_name)
+            # Exception messages can contain fetched bodies or credentials.
+            # Logs and returned results both use closed, content-free facts.
+            logger.error(
+                "ingest_source_scrape_failed source_ref=%s elapsed_seconds=%.6f "
+                "yielded_count=%d reason=unexpected_error",
+                source_ref, monotonic() - scrape_started, len(articles),
+            )
             try:
                 scrape_stats = scraper.get_last_scrape_stats()
             except Exception:
@@ -333,6 +345,11 @@ def run_core_ingestion(
         else:
             source_inserted = 0
             source_skipped = 0
+            write_started = monotonic()
+            logger.info(
+                "ingest_source_write_started source_ref=%s yielded_count=%d",
+                source_ref, len(articles),
+            )
             try:
                 # A committed source is the smallest truthful terminal unit:
                 # later sources can fail without undoing earlier successful
@@ -354,12 +371,22 @@ def run_core_ingestion(
                             source_inserted += 1
                         else:
                             source_skipped += 1
+                    # These writes are still pending until the context
+                    # manager exits. Do not label them committed here.
+                    commit_started = monotonic()
+                    logger.info(
+                        "ingest_source_commit_started source_ref=%s attempted_count=%d",
+                        source_ref, source_attempted,
+                    )
             except Exception:
                 # The context manager has already rolled back this source.
                 # Do not carry local insert/skip counters into the aggregate
                 # result or source terminal summary; they were not committed.
-                logger.exception(
-                    "Source database write failed for %s", scraper.source_name
+                logger.error(
+                    "ingest_source_write_failed source_ref=%s elapsed_seconds=%.6f "
+                    "attempted_count=%d inserted_count=0 skipped_existing_count=0 "
+                    "reason=unexpected_error",
+                    source_ref, monotonic() - write_started, source_attempted,
                 )
                 source_result = _source_result(
                     scrape_stats=scrape_stats,
@@ -370,6 +397,14 @@ def run_core_ingestion(
                     fatal_error_count=1,
                 )
             else:
+                logger.info(
+                    "ingest_source_committed source_ref=%s elapsed_seconds=%.6f "
+                    "commit_seconds=%.6f attempted_count=%d inserted_count=%d "
+                    "skipped_existing_count=%d",
+                    source_ref, monotonic() - write_started,
+                    monotonic() - commit_started, source_attempted,
+                    source_inserted, source_skipped,
+                )
                 reason = _safe_scrape_reason(
                     scrape_stats.get("reason_code"), yielded_count=len(articles)
                 )

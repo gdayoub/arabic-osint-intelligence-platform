@@ -1,0 +1,44 @@
+[
+  {
+    "file": "fixtures/evidence.alias.synthetic.json",
+    "options": {},
+    "query": "Mohammed al-Ahmad"
+  },
+  {
+    "file": "fixtures/evidence.arabic.synthetic.json",
+    "options": {},
+    "query": "مُحَمَّد الاحمد"
+  },
+  {
+    "file": "fixtures/evidence.romanization.synthetic.json",
+    "options": {},
+    "query": "muhammad ahmad"
+  },
+  {
+    "file": "fixtures/evidence.cropped.synthetic.json",
+    "options": {
+      "span_characters": 25
+    },
+    "query": "muhammad ahmad"
+  },
+  {
+    "file": "fixtures/evidence.empty.synthetic.json",
+    "options": {},
+    "query": "zzzz-no-such-name"
+  },
+  {
+    "file": "fixtures/evidence.unbounded.synthetic.json",
+    "options": {
+      "span_characters": 5
+    },
+    "query": "muhammad ahmad"
+  },
+  {
+    "file": "fixtures/evidence.capped.synthetic.json",
+    "options": {
+      "evidence_per_entity": 1,
+      "limit": 1
+    },
+    "query": "ح"
+  }
+]

@@ -271,6 +271,8 @@ def test_grouped_split_is_deterministic_and_never_leaks_a_name_group():
             baseline_exact_match=False,
             baseline_gazetteer_match=False,
             sampling=_sampling(),
+            left_group=f"name-{index // 2}",
+            right_group=f"alias-{index // 2}",
         )
         for index in range(8)
     )

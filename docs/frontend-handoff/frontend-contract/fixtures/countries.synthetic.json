@@ -1,0 +1,104 @@
+{
+  "Lebanon": {
+    "articles": [
+      {
+        "escalation": "low",
+        "processed_at": "2026-10-10T11:00:00+00:00",
+        "published_date": "2026-10-10T10:00:00+00:00",
+        "source": "synthetic-source-b",
+        "title": "[تجريبي] برنامج القراءة مع علي حسن",
+        "title_en": "[SYNTHETIC] Reading programme",
+        "topic": "Education",
+        "url": "https://example.invalid/osint-fixture/fx-3"
+      },
+      {
+        "escalation": "high",
+        "processed_at": null,
+        "published_date": "2026-10-09T10:00:00+00:00",
+        "source": "synthetic-source-c",
+        "title": "[تجريبي] علي حسن يناقش التقرير",
+        "title_en": null,
+        "topic": "Politics",
+        "url": "https://example.invalid/osint-fixture/fx-4"
+      }
+    ],
+    "country": "Lebanon",
+    "daily": [
+      {
+        "count": 1,
+        "date": "2026-10-10"
+      }
+    ],
+    "escalation": {
+      "high": 1,
+      "low": 1
+    },
+    "generated_at": "2026-10-12T12:00:00+00:00",
+    "schema_version": 1,
+    "slug": "lebanon",
+    "sources": {
+      "synthetic-source-b": 1,
+      "synthetic-source-c": 1
+    },
+    "topics": [
+      {
+        "count": 1,
+        "topic": "Education"
+      },
+      {
+        "count": 1,
+        "topic": "Politics"
+      }
+    ],
+    "total": 2
+  },
+  "Syria": {
+    "articles": [
+      {
+        "escalation": "high",
+        "processed_at": "2026-10-11T12:00:00+00:00",
+        "published_date": "2026-10-11T09:00:00+00:00",
+        "source": "synthetic-source-a",
+        "title": "[تجريبي] خبر <script>alert('x')</script> & مكتبة محمد الأحمد",
+        "title_en": "[SYNTHETIC] Library report <not markup>",
+        "topic": "Culture",
+        "url": "https://example.invalid/osint-fixture/fx-1"
+      },
+      {
+        "escalation": "medium",
+        "processed_at": "2026-10-11T13:00:00+00:00",
+        "published_date": null,
+        "source": "synthetic-source-b",
+        "title": "[تجريبي] محمد الأحمد وعلي حسن في المكتبة",
+        "title_en": null,
+        "topic": "Culture",
+        "url": "https://example.invalid/osint-fixture/fx-2"
+      }
+    ],
+    "country": "Syria",
+    "daily": [
+      {
+        "count": 2,
+        "date": "2026-10-11"
+      }
+    ],
+    "escalation": {
+      "high": 1,
+      "medium": 1
+    },
+    "generated_at": "2026-10-12T12:00:00+00:00",
+    "schema_version": 1,
+    "slug": "syria",
+    "sources": {
+      "synthetic-source-a": 1,
+      "synthetic-source-b": 1
+    },
+    "topics": [
+      {
+        "count": 2,
+        "topic": "Culture"
+      }
+    ],
+    "total": 2
+  }
+}

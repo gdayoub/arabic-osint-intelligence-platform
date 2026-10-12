@@ -1,11 +1,11 @@
 /**
- * Serves dist/ as static assets, adding a CORS header on data.json so the
+ * Serves dist/ as static assets, adding CORS headers on data.json and the opt-in metadata archive so the
  * portfolio site (a different origin) can fetch it directly. Cloudflare
  * Pages' _headers-file convention doesn't apply to Workers static assets --
  * this fetch-handler-plus-ASSETS-binding pattern is the supported way to
  * customize responses for a Workers-with-static-assets site.
  *
- * data.json contains only aggregate counts, titles, and URLs -- never
+ * These artifacts contain public metadata only -- never
  * document body text (enforced by scripts/bake_dashboard_data.py and
  * tested in tests/unit/test_bake.py) -- so a wildcard origin is fine here.
  */
@@ -14,7 +14,7 @@ export default {
     const response = await env.ASSETS.fetch(request);
     const url = new URL(request.url);
 
-    if (url.pathname === "/data.json") {
+    if (url.pathname === "/data.json" || url.pathname === "/countries/_atlas.json") {
       const headers = new Headers(response.headers);
       headers.set("Access-Control-Allow-Origin", "*");
       return new Response(response.body, {

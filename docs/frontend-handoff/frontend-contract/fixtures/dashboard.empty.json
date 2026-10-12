@@ -1,0 +1,29 @@
+{
+  "countries": [],
+  "daily": [],
+  "entities": {
+    "top": {},
+    "total": 0
+  },
+  "escalation": {
+    "escalation": {}
+  },
+  "generated_at": "2026-10-12T12:00:00+00:00",
+  "mentions": {
+    "top": {},
+    "total": 0
+  },
+  "recent": [],
+  "review_queue": {
+    "items": []
+  },
+  "schema_version": 1,
+  "stats": {
+    "sources": {},
+    "total_processed": 0,
+    "total_raw": 0
+  },
+  "topics": {
+    "topics": []
+  }
+}

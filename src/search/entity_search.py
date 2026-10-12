@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from src.core.models import Entity
 from src.lang import REGISTRY
 from src.lang.arabic import ArabicAdapter
+from src.search.name_matching import normalized_match
 from src.store.orm import EntityORM, TranslationORM
 
 _ARABIC = ArabicAdapter()
@@ -60,7 +61,7 @@ def _search_arabic(session: Session, query: str, limit: int) -> list[Entity]:
     matches: list[EntityORM] = []
     for row in _live_entity_rows(session):
         normalized_name = _ARABIC.normalize(row.canonical_name)
-        if normalized_query == normalized_name or normalized_query in normalized_name:
+        if normalized_match(normalized_query, normalized_name) is not None:
             matches.append(row)
             if len(matches) >= limit:
                 break
@@ -84,7 +85,7 @@ def _search_latin(session: Session, query: str, limit: int) -> list[Entity]:
         if not matched:
             candidates = _ARABIC.romanize(row.canonical_name)
             matched = any(
-                normalized_query == candidate or normalized_query in candidate
+                normalized_match(normalized_query, candidate) is not None
                 for candidate in candidates
             )
 
@@ -111,10 +112,7 @@ def _translated_arabic_names_matching(session: Session, normalized_query: str) -
         _ARABIC.normalize(source_text)
         for source_text, translated_text in rows
         if translated_text
-        and (
-            normalized_query == translated_text.strip().lower()
-            or normalized_query in translated_text.strip().lower()
-        )
+        and normalized_match(normalized_query, translated_text.strip().lower()) is not None
     }
 
 

@@ -29,6 +29,7 @@ import math
 import random
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from itertools import groupby
 from pathlib import Path
 from typing import Any, Callable, Iterable, Literal, Mapping, Sequence
 
@@ -588,6 +589,10 @@ class LabeledPair:
 
     ``label`` may be ``None`` while a sampled queue is awaiting review.  Such
     rows are kept visible in reports but never count as evidence.
+
+    Endpoint groups come directly from the sampling manifest. Legacy rows
+    with only an opaque ``group_id`` remain readable, but cannot establish
+    name-disjoint evaluation. Never infer endpoints by splitting that ID.
     """
 
     pair_id: str
@@ -598,6 +603,20 @@ class LabeledPair:
     baseline_exact_match: bool
     baseline_gazetteer_match: bool
     sampling: Mapping[str, Any] | None = None
+    left_group: str | None = None
+    right_group: str | None = None
+
+    @property
+    def name_groups(self) -> tuple[str, ...]:
+        if self.left_group is None or self.right_group is None:
+            raise LearningContractError(
+                f"pair {self.pair_id!r} lacks left_group/right_group; "
+                "name-group disjointness is not proven. Re-export endpoint groups "
+                "from the sampling manifest into a new frozen snapshot"
+            )
+        left = _require_string(self.left_group, "pairs.left_group")
+        right = _require_string(self.right_group, "pairs.right_group")
+        return tuple(sorted({left, right}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -640,6 +659,10 @@ def _parse_labeled_pair(
 ) -> LabeledPair:
     pair_id = _require_string(raw.get("pair_id"), "pairs.pair_id")
     group_id = _require_string(raw.get("group_id"), "pairs.group_id")
+    left_group = right_group = None
+    if "left_group" in raw or "right_group" in raw:
+        left_group = _require_string(raw.get("left_group"), "pairs.left_group")
+        right_group = _require_string(raw.get("right_group"), "pairs.right_group")
     source_group = _require_string(raw.get("source_group", "unknown"), "pairs.source_group")
     label = raw.get("label")
     if label is not None and not isinstance(label, bool):
@@ -677,6 +700,8 @@ def _parse_labeled_pair(
             raw.get("baseline_gazetteer_match", False), "pairs.baseline_gazetteer_match"
         ),
         sampling=dict(sampling) if isinstance(sampling, Mapping) else None,
+        left_group=left_group,
+        right_group=right_group,
     )
 
 
@@ -791,7 +816,11 @@ def load_label_dataset(path: Path) -> FrozenLabelDataset:
 def assert_training_audit_disjoint(
     training: FrozenLabelDataset, audit: FrozenLabelDataset
 ) -> None:
-    """Reject both direct pair overlap and group leakage into the audit set."""
+    """Reject pair, opaque-group, and either-endpoint leakage into the audit.
+
+    This checks every row, including unresolved labels. Missing endpoint
+    metadata is insufficient evidence of disjointness, not an empty group.
+    """
 
     if training.purpose != "training":
         raise LearningContractError("first dataset must be a training snapshot")
@@ -810,6 +839,14 @@ def assert_training_audit_disjoint(
             "training and audit snapshots share normalized-name/entity groups: "
             f"{sorted(overlapping_groups)[:5]}"
         )
+    training_names = {name for pair in training.pairs for name in pair.name_groups}
+    audit_names = {name for pair in audit.pairs for name in pair.name_groups}
+    overlapping_names = training_names & audit_names
+    if overlapping_names:
+        raise LearningContractError(
+            "training and audit snapshots share normalized-name/entity groups: "
+            f"{sorted(overlapping_names)[:5]}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -824,23 +861,63 @@ class GroupedSplit:
 def grouped_split(
     pairs: Sequence[LabeledPair], *, test_fraction: float, seed: int
 ) -> GroupedSplit:
-    """Split by normalized-name/entity group instead of by individual rows."""
+    """Split connected name/entity components instead of individual rows.
+
+    A-B and B-C stay together even when their opaque group IDs differ. Rows
+    with the same opaque ID also stay together, preserving that older
+    grouping constraint. ``test_fraction`` applies to components, not rows;
+    the returned group lists still contain the original opaque group IDs.
+    """
 
     if not 0.0 < test_fraction < 1.0:
         raise LearningContractError("test_fraction must be strictly between 0 and 1")
-    by_group: dict[str, list[LabeledPair]] = defaultdict(list)
+    pair_ids = [pair.pair_id for pair in pairs]
+    if len(pair_ids) != len(set(pair_ids)):
+        raise LearningContractError("grouped split contains duplicate pair_id values")
+
+    # Opaque groups are graph vertices; sharing either endpoint adds an
+    # edge. Connecting to the first group seen for each name is sufficient
+    # and avoids building every possible edge for very frequent names.
+    neighbors: dict[str, set[str]] = defaultdict(set)
+    first_group_by_name: dict[str, str] = {}
     for pair in pairs:
-        by_group[pair.group_id].append(pair)
-    if len(by_group) < 2:
-        raise LearningContractError("grouped split needs at least two distinct groups")
-    ranked_groups = sorted(
-        by_group,
-        key=lambda group: (hashlib.sha256(f"{seed}\x1f{group}".encode("utf-8")).hexdigest(), group),
+        for name in pair.name_groups:
+            previous_group = first_group_by_name.setdefault(name, pair.group_id)
+            neighbors[pair.group_id].add(previous_group)
+            neighbors[previous_group].add(pair.group_id)
+
+    components: list[tuple[str, ...]] = []
+    visited: set[str] = set()
+    for group in sorted(neighbors):
+        if group in visited:
+            continue
+        pending = [group]
+        component: list[str] = []
+        while pending:
+            current = pending.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            component.append(current)
+            pending.extend(neighbors[current] - visited)
+        components.append(tuple(sorted(component)))
+
+    if len(components) < 2:
+        raise LearningContractError("grouped split needs at least two disjoint name/entity components")
+    ranked_components = sorted(
+        components,
+        key=lambda component: (
+            hashlib.sha256(_canonical_json([seed, component])).hexdigest(), component
+        ),
     )
-    test_groups_count = round(len(ranked_groups) * test_fraction)
-    test_groups_count = min(max(test_groups_count, 1), len(ranked_groups) - 1)
-    test_groups = tuple(sorted(ranked_groups[:test_groups_count]))
-    train_groups = tuple(sorted(ranked_groups[test_groups_count:]))
+    test_components_count = round(len(ranked_components) * test_fraction)
+    test_components_count = min(max(test_components_count, 1), len(ranked_components) - 1)
+    test_groups = tuple(sorted(
+        group for component in ranked_components[:test_components_count] for group in component
+    ))
+    train_groups = tuple(sorted(
+        group for component in ranked_components[test_components_count:] for group in component
+    ))
     test_group_set = set(test_groups)
     test_ids = tuple(sorted(pair.pair_id for pair in pairs if pair.group_id in test_group_set))
     train_ids = tuple(sorted(pair.pair_id for pair in pairs if pair.group_id not in test_group_set))
@@ -1094,16 +1171,27 @@ def _binary_metrics(labels: Sequence[bool], scores: Sequence[float], predictions
 
 
 def _average_precision(labels: Sequence[bool], scores: Sequence[float]) -> float | None:
+    """Non-interpolated AP at distinct score thresholds, including ties.
+
+    All equal-scored rows enter a threshold together. Their recall increase
+    weights the precision after the full block, making AP independent of
+    row order (also for the exact/gazetteer baselines' binary scores).
+    """
+
     positives = sum(labels)
     if not positives:
         return None
     ranked = sorted(zip(scores, labels), key=lambda item: item[0], reverse=True)
     true_so_far = 0
+    predicted_so_far = 0
     total = 0.0
-    for index, (_score, label) in enumerate(ranked, start=1):
-        if label:
-            true_so_far += 1
-            total += true_so_far / index
+    for _score, tied_rows in groupby(ranked, key=lambda item: item[0]):
+        positives_at_threshold = 0
+        for _tied_score, label in tied_rows:
+            predicted_so_far += 1
+            positives_at_threshold += label
+        true_so_far += positives_at_threshold
+        total += positives_at_threshold * (true_so_far / predicted_so_far)
     return total / positives
 
 
