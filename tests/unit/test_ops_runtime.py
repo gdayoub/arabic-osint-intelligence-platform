@@ -834,3 +834,69 @@ def test_core_wrapper_wires_static_versions_and_never_enables_release_by_default
     assert captured["extractor_versions"] == core_component_versions(
         translation_mode="best-effort"
     )
+
+
+def test_stage_logs_use_monotonic_time_safe_run_reference_and_fixed_counters(
+    session, monkeypatch, caplog
+):
+    import hashlib
+
+    run_id = "private-run-value=not-for-logs"
+    ticks = iter((10.0, 12.5))
+    monkeypatch.setattr(runtime, "monotonic", lambda: next(ticks))
+    caplog.set_level("INFO", logger="ops.runtime")
+    result = run_orchestrated_pipeline(
+        (PipelineStage("process", lambda _runtime: StageOutcome(7, 5, 2)),),
+        session_scope=_scope(session), run_id=run_id,
+        commit_sha=COMMIT_SHA, clock=_clock,
+    )
+
+    messages = [record.getMessage() for record in caplog.records if record.name == "ops.runtime"]
+    run_ref = hashlib.sha256(run_id.encode()).hexdigest()[:16]
+    assert messages == [
+        f"pipeline_stage_started run_ref={run_ref} stage=process",
+        f"pipeline_stage_succeeded run_ref={run_ref} stage=process elapsed_seconds=2.500000 "
+        "input_count=7 output_count=5 error_count=2",
+    ]
+    assert run_id not in caplog.text
+    # A completed stage with errors still projects degraded health.
+    assert result.health.stages[0].status == "degraded"
+
+
+def test_stage_failure_logs_never_copy_exception_messages(session, monkeypatch, caplog):
+    ticks = iter((10.0, 14.0))
+    monkeypatch.setattr(runtime, "monotonic", lambda: next(ticks))
+    caplog.set_level("INFO", logger="ops.runtime")
+    original = RuntimeError(SECRET_TEXT)
+
+    def operation(_runtime):
+        raise original
+
+    with pytest.raises(PipelineExecutionFailed) as raised:
+        run_orchestrated_pipeline(
+            (PipelineStage("resolve", operation),), session_scope=_scope(session),
+            run_id="safe-failure-log", commit_sha=COMMIT_SHA, clock=_clock,
+        )
+
+    assert raised.value.__cause__ is original
+    assert SECRET_TEXT not in caplog.text
+    assert "elapsed_seconds=4.000000" in caplog.text
+    assert "input_count=unknown output_count=unknown error_count=1 reason=unexpected_error" in caplog.text
+    assert "pipeline_stage_succeeded" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records if record.name == "ops.runtime")
+
+
+def test_interrupted_stage_log_does_not_invent_a_terminal(session, caplog):
+    caplog.set_level("INFO", logger="ops.runtime")
+
+    def interrupted(_runtime):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_orchestrated_pipeline(
+            (PipelineStage("resolve", interrupted),), session_scope=_scope(session),
+            run_id="interrupted-log", commit_sha=COMMIT_SHA, clock=_clock,
+        )
+    messages = [record.getMessage() for record in caplog.records if record.name == "ops.runtime"]
+    assert len(messages) == 1
+    assert messages[0].startswith("pipeline_stage_started ")

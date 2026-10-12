@@ -6,14 +6,21 @@ split across four rows and this is the thing that is supposed to fix it.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
+import pytest
+from hypothesis import given, strategies as st
 from sqlalchemy import select
 
+from scripts.bench_resolution_partition import CountingConstraints, legacy_partition
+from src.pipeline import resolve_core
 from src.pipeline.resolve_core import (
     load_mention_contexts,
     pick_canonical_name,
     resolve_all,
 )
 from src.lang.arabic import ArabicAdapter
+from src.resolve.review import ordered_pair, record_decision
 from src.store.orm import EntityMentionORM, EntityORM, ProvenanceORM
 from src.store.provenance import create_document, create_mention, register_extractor_version
 
@@ -265,3 +272,185 @@ def test_two_different_known_people_do_not_merge_via_the_gazetteer(session, onto
     session.flush()
 
     assert resolve_all(session, ontology).entities_created == 2
+
+
+# The benchmark preserves the original helper as an executable reference.
+# Tests assert output/work-count properties rather than machine timing.
+@given(
+    members=st.lists(st.integers(1, 100), unique=True, max_size=30),
+    pairs=st.sets(
+        st.tuples(st.integers(1, 100), st.integers(1, 100)).filter(lambda pair: pair[0] != pair[1]),
+        max_size=50,
+    ),
+)
+def test_partition_is_equivalent_to_original_for_empty_and_nonempty_constraints(members, pairs):
+    cannot_links = {ordered_pair(*pair) for pair in pairs}
+    original_members = list(members)
+    assert resolve_core._partition_on_cannot_links(members, cannot_links) == legacy_partition(members, cannot_links)
+    assert resolve_core._partition_on_cannot_links(members, set()) == legacy_partition(members, set())
+    assert members == original_members
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 500])
+def test_empty_constraint_fast_path_performs_zero_pair_membership_checks(size):
+    members = list(reversed(range(1, size + 1)))
+    before, after = CountingConstraints(), CountingConstraints()
+    assert resolve_core._partition_on_cannot_links(members, after) == legacy_partition(members, before)
+    assert before.probes == size * (size - 1) // 2
+    assert after.probes == 0
+
+
+def test_nonempty_constraint_path_keeps_the_original_checks_and_partition_order():
+    before = CountingConstraints({(1, 3), (2, 4)})
+    after = CountingConstraints(before)
+    members = [4, 3, 2, 1]
+    assert resolve_core._partition_on_cannot_links(members, after) == legacy_partition(members, before)
+    assert after.probes == before.probes > 0
+    assert resolve_core._partition_on_cannot_links(members, after) == [[1, 2], [3, 4]]
+
+
+def test_empty_constraint_fast_path_preserves_duplicate_mention_id_rejection():
+    with pytest.raises(ValueError, match="two different mentions"):
+        legacy_partition([1, 2, 1], set())
+    with pytest.raises(ValueError, match="two different mentions"):
+        resolve_core._partition_on_cannot_links([1, 2, 1], set())
+
+
+@pytest.mark.parametrize("constrained", [False, True])
+def test_full_resolution_output_and_evidence_match_original_partitioning(
+    session, ontology, blob_store, monkeypatch, constrained
+):
+    extractor = register_extractor_version(session, "gazetteer_extractor", "1.0.0")
+    mentions = _document_with_mentions(
+        session, blob_store, ontology, extractor, name="comparison",
+        spellings=["دونالد ترامب", "ترامب", "ترمب", "بشار الأسد", "بشار الأسد"],
+        hash_prefix="partition-equivalence",
+    )
+    session.flush()
+    if constrained:
+        record_decision(
+            session, mentions[0].id, mentions[1].id, "different",
+            reviewer="fixture", source="test",
+        )
+
+    def snapshot():
+        entities = session.scalars(select(EntityORM).where(EntityORM.retracted.is_(False))).all()
+        return sorted(
+            (
+                entity.canonical_name,
+                entity.object_type,
+                entity.properties["mention_count"],
+                tuple(entity.properties["surface_forms"]),
+                tuple(sorted(session.scalars(select(EntityMentionORM.mention_id).where(
+                    EntityMentionORM.entity_id == entity.id
+                )))),
+                tuple(sorted(session.scalars(select(ProvenanceORM.mention_id).where(
+                    ProvenanceORM.target_table == "entities", ProvenanceORM.target_id == entity.id
+                )))),
+            )
+            for entity in entities
+        )
+
+    current_partition = resolve_core._partition_on_cannot_links
+    monkeypatch.setattr(resolve_core, "_partition_on_cannot_links", legacy_partition)
+    before = resolve_all(session, ontology)
+    session.flush()
+    expected = snapshot()
+    monkeypatch.setattr(resolve_core, "_partition_on_cannot_links", current_partition)
+    after = resolve_all(session, ontology)
+    session.flush()
+    assert snapshot() == expected
+    for name in ("mentions", "candidate_pairs", "full_pairs", "matched_pairs", "entities_created",
+                 "giant_components_split", "exact_duplicate_groups", "human_constraints_applied", "size_histogram"):
+        assert getattr(after, name) == getattr(before, name)
+    # Full recomputation and append-only history still happen on every run.
+    assert after.entities_retracted == before.entities_created
+
+
+def test_resolution_logs_fixed_phase_boundaries_and_only_counts(session, ontology, blob_store, caplog):
+    extractor = register_extractor_version(session, "gazetteer_extractor", "1.0.0")
+    _document_with_mentions(
+        session, blob_store, ontology, extractor, name="private",
+        spellings=["دونالد ترامب"] * 5, hash_prefix="private-content",
+    )
+    caplog.set_level("INFO", logger="pipeline.resolve_core")
+    resolve_all(session, ontology)
+    logs = [r.getMessage() for r in caplog.records if r.name == "pipeline.resolve_core"]
+    expected = [
+        "acquire_output_lock", "flush_pending", "initialize", "load_contexts", "load_mentions",
+        "load_constraints", "group_mentions", "partition_groups", "remap_constraints", "blocking",
+        "register_version", "scoring", "queue_review", "clustering", "retract_entities", "write_entities",
+    ]
+    assert len(logs) == len(expected) * 2
+    for index, phase in enumerate(expected):
+        assert logs[index * 2] == f"resolve_phase_started phase={phase}"
+        assert logs[index * 2 + 1].startswith(f"resolve_phase_succeeded phase={phase} elapsed_seconds=")
+    assert "mentions=5" in " ".join(logs)
+    assert "دونالد ترامب" not in " ".join(logs)
+    assert "private-content" not in " ".join(logs)
+
+
+def test_resolution_phase_clock_is_monotonic_and_counters_are_allowlisted(monkeypatch, caplog):
+    ticks = iter((40.0, 42.25))
+    monkeypatch.setattr(resolve_core, "monotonic", lambda: next(ticks))
+    caplog.set_level("INFO", logger="pipeline.resolve_core")
+    with resolve_core._resolution_phase("load_contexts") as counters:
+        counters["mentions"] = 12
+        counters["article_text"] = "never log this body"
+        counters["candidate_pairs"] = "never log this secret"
+        counters["groups"] = -1
+        counters["decisions"] = True
+    assert "elapsed_seconds=2.250000 mentions=12" in caplog.text
+    assert "never log" not in caplog.text
+    assert "decisions=" not in caplog.text
+    assert "groups=" not in caplog.text
+
+
+def test_resolution_phase_failure_preserves_exception_without_logging_text(session, ontology, monkeypatch, caplog):
+    secret = "token=private-error-body"
+    original = RuntimeError(secret)
+    caplog.set_level("INFO", logger="pipeline.resolve_core")
+
+    def fail(*args):
+        raise original
+
+    monkeypatch.setattr(resolve_core, "load_mention_contexts", fail)
+    with pytest.raises(RuntimeError) as raised:
+        resolve_all(session, ontology)
+    assert raised.value is original
+    assert "resolve_phase_failed phase=load_contexts" in caplog.text
+    assert "resolve_phase_succeeded phase=load_contexts" not in caplog.text
+    assert secret not in caplog.text
+    assert all(r.exc_info is None for r in caplog.records if r.name == "pipeline.resolve_core")
+
+
+@pytest.mark.parametrize("commit_fails", [False, True])
+def test_resolution_commit_log_only_succeeds_after_transaction_exit(monkeypatch, caplog, commit_fails):
+    secret = "token=private-commit-error"
+    original = RuntimeError(secret)
+    stats = resolve_core.ResolveStats(entities_created=2, entities_retracted=1)
+    caplog.set_level("INFO", logger="pipeline.resolve_core")
+    monkeypatch.setattr(resolve_core, "resolve_all", lambda *args, **kwargs: stats)
+    ticks = iter((100.0, 103.0))
+    monkeypatch.setattr(resolve_core, "monotonic", lambda: next(ticks))
+
+    @contextmanager
+    def session_scope():
+        yield object()
+        assert "resolve_phase_started phase=commit" in caplog.text
+        assert "resolve_phase_succeeded phase=commit" not in caplog.text
+        if commit_fails:
+            raise original
+
+    monkeypatch.setattr(resolve_core, "get_core_session", session_scope)
+    if commit_fails:
+        with pytest.raises(RuntimeError) as raised:
+            resolve_core.run_core_resolution()
+        assert raised.value is original
+        assert "resolve_phase_failed phase=commit elapsed_seconds=3.000000" in caplog.text
+        assert "resolve_phase_succeeded phase=commit" not in caplog.text
+    else:
+        assert resolve_core.run_core_resolution() is stats
+        assert "resolve_phase_succeeded phase=commit elapsed_seconds=3.000000" in caplog.text
+        assert "entities_created=2 entities_retracted=1" in caplog.text
+    assert secret not in caplog.text

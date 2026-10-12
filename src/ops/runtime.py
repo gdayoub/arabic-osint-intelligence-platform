@@ -26,6 +26,7 @@ import logging
 import os
 from pathlib import Path
 import re
+from time import monotonic
 from typing import Any, ContextManager, NoReturn
 from uuid import uuid4
 
@@ -586,10 +587,9 @@ def build_core_pipeline_stages(
             try:
                 return outcome_from_translate_stats(run_core_translation())
             except Exception:
-                # The private job log retains the exception. The ledger gets
-                # only an error count, so it accurately degrades health
-                # without exposing a provider response or credential.
-                logger.exception("Optional title translation failed")
+                # Provider exceptions can contain credentials or response
+                # bodies. Both the runner log and ledger keep closed facts.
+                logger.error("Optional title translation failed reason=unexpected_error")
                 return StageOutcome(error_count=1)
 
         stages.append(
@@ -615,6 +615,16 @@ class _RunRecorder:
     extractor_versions: dict[str, str] = field(default_factory=dict)
     _last_occurred_at: datetime | None = None
     _heartbeat_index: int = 0
+    _stage_started_at: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def log_run_ref(self) -> str:
+        # User-supplied run IDs are only length-checked, so they must not be
+        # copied into logs. A short digest still correlates this run's stages.
+        return hashlib.sha256(self.run_id.encode("utf-8")).hexdigest()[:16]
+
+    def stage_elapsed(self, name: str) -> float:
+        return monotonic() - self._stage_started_at.pop(name)
 
     def timestamp(self) -> datetime:
         value = _as_utc(self.clock(), field="clock result")
@@ -667,6 +677,13 @@ class _RunRecorder:
             )
 
     def stage_started(self, name: str, *, input_count: int | None = None) -> None:
+        self._stage_started_at[name] = monotonic()
+        # Log before the durable write so a blocked start checkpoint is
+        # visible too. This is runner progress, not proof of a ledger commit.
+        logger.info(
+            "pipeline_stage_started run_ref=%s stage=%s",
+            self.log_run_ref, name,
+        )
         self.append(
             f"stage:{name}:started",
             PipelineEventType.STAGE_STARTED,
@@ -683,6 +700,12 @@ class _RunRecorder:
             output_count=outcome.output_count,
             error_count=outcome.error_count,
         )
+        logger.info(
+            "pipeline_stage_succeeded run_ref=%s stage=%s elapsed_seconds=%.6f "
+            "input_count=%d output_count=%d error_count=%d",
+            self.log_run_ref, name, self.stage_elapsed(name),
+            outcome.input_count, outcome.output_count, outcome.error_count,
+        )
 
     def stage_failed(
         self,
@@ -691,6 +714,17 @@ class _RunRecorder:
         reason_code: PipelineReasonCode,
         outcome: StageOutcome | None = None,
     ) -> None:
+        # A failure was observed even if its following ledger write fails.
+        # Never log the original exception, SQL parameters, or result bodies.
+        logger.error(
+            "pipeline_stage_failed run_ref=%s stage=%s elapsed_seconds=%.6f "
+            "input_count=%s output_count=%s error_count=%d reason=%s",
+            self.log_run_ref, name, self.stage_elapsed(name),
+            outcome.input_count if outcome is not None else "unknown",
+            outcome.output_count if outcome is not None else "unknown",
+            max(1, outcome.error_count) if outcome is not None else 1,
+            reason_code.value,
+        )
         self.append(
             f"stage:{name}:failed",
             PipelineEventType.STAGE_FAILED,
@@ -1016,7 +1050,10 @@ def run_orchestrated_pipeline(
         try:
             outcome = _validated_outcome(stage.operation(boundaries.runtime()))
         except Exception as exc:
-            logger.exception("Pipeline stage failed: %s", stage.name)
+            logger.error(
+                "pipeline_stage_operation_raised run_ref=%s stage=%s reason=unexpected_error",
+                recorder.log_run_ref, stage.name,
+            )
             boundaries.close_missing((*stage.source_names, *boundaries.started_sources))
             _failure(
                 recorder,
@@ -1104,7 +1141,7 @@ def run_orchestrated_pipeline(
                     occurred_at=recorder.timestamp(),
                 )
         except Exception as exc:
-            logger.exception("Release candidate preparation failed")
+            logger.error("Release candidate preparation raised reason=unexpected_error")
             reason = (
                 PipelineReasonCode.RELEASE_CONTRACT_FAILED
                 if isinstance(exc, CandidateIntegrityError)

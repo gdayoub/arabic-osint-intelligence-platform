@@ -206,3 +206,39 @@ does not earn its keep until it handles names the gazetteer does not know,
 and that needs a training set drawn from blocking-surviving pairs rather
 than the arbitrary name pairs it was fit on. 17 of 24 current negatives
 never survive blocking, so the model was graded on an exam it never sits.
+
+## 2026-10-12 — Empty-cannot-link partition fast path (offline)
+
+This measures only `_partition_on_cannot_links`, not a complete resolver or
+production run. Baseline: the original loop at `3a9bd697`. Inputs: distinct
+integer mention IDs, shuffled with seed 42, empty cannot-link set. The new
+path preserves sorted output, including the original duplicate-ID validation.
+
+Reproduce from the repository root:
+
+```sh
+python -m scripts.bench_resolution_partition --sizes 1000 5000 10000 --repeat 3
+```
+
+Measured in the dot cloud workspace on Linux with Python 3.12.14. Timing
+columns are the median of three runs per implementation using ordinary
+sets. Actual set membership probes are measured in a separate counting-set
+run, so counting overhead does not inflate the reported timings. Timings are
+observations on this machine, never test thresholds or production forecasts.
+
+| Group members | Original membership probes | Fast-path probes | Original median seconds | Fast-path median seconds | Outputs equal |
+|---:|---:|---:|---:|---:|:---:|
+| 1,000 | 499,500 | 0 | 0.066557 | 0.000122 | Yes |
+| 5,000 | 12,497,500 | 0 | 1.765918 | 0.000844 | Yes |
+| 10,000 | 49,995,000 | 0 | 6.576075 | 0.002906 | Yes |
+
+The before count is exactly `n * (n - 1) // 2`. The new helper still sorts and
+checks adjacent IDs, so it is not constant time. Any nonempty constraint set
+retains the original greedy loop and exact membership checks. Property tests
+compare both paths to the preserved baseline; full-resolution tests compare
+entity/evidence output with empty and nonempty human constraints.
+
+No corpus, database, R2 writes, network request, workflow rerun, or paid API
+was used. This does not establish why previous production runs reached the
+55-minute deadline or claim those cancellations are fixed. New bounded phase
+logs make that diagnosis possible in a later authorized run. See ADR 0035.

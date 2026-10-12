@@ -558,3 +558,83 @@ def test_interrupted_runtime_never_records_uncommitted_source_success(
             )
         )
     assert PipelineEventType.RUN_ABANDONED.value in terminal_types
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_ingest_logs_separate_yield_pending_writes_and_committed_counts(
+    session, ontology, blob_store, monkeypatch, caplog, duplicate
+):
+    import hashlib
+
+    article = _article("https://example.com/private-url?token=not-for-logs")
+    scraper = _ReturnedArticleScraper(article)
+    scraper.source_name = "private-source=not-for-logs"
+    source_ref = hashlib.sha256(scraper.source_name.encode()).hexdigest()[:16]
+    if duplicate:
+        extractor = register_extractor_version(session, scraper.NAME, scraper.VERSION)
+        ingest_core.ingest_article(session, article.to_dict(), blob_store, extractor, ontology)
+        session.commit()
+    monkeypatch.setattr(ingest_core, "build_scrapers", lambda: [scraper])
+    caplog.set_level("INFO", logger="pipeline.ingest_core")
+
+    def messages():
+        return [r.getMessage() for r in caplog.records if r.name == "pipeline.ingest_core"]
+
+    @contextmanager
+    def commit_scope():
+        yield session
+        pending = messages()
+        assert any(m.startswith("ingest_source_returned ") for m in pending)
+        assert any(m.startswith("ingest_source_commit_started ") for m in pending)
+        assert not any(m.startswith("ingest_source_committed ") for m in pending)
+        session.commit()
+
+    monkeypatch.setattr(ingest_core, "get_core_session", commit_scope)
+    stats = ingest_core.run_core_ingestion(blob_store=blob_store)
+    assert stats.inserted == (0 if duplicate else 1)
+    logs = messages()
+    assert len(logs) == 5
+    assert "yielded_count=1" in logs[1]
+    assert logs[-1].startswith(f"ingest_source_committed source_ref={source_ref}")
+    assert f"inserted_count={0 if duplicate else 1}" in logs[-1]
+    assert f"skipped_existing_count={1 if duplicate else 0}" in logs[-1]
+    assert scraper.source_name not in caplog.text
+    assert article.url not in caplog.text
+    assert article.title not in caplog.text
+    assert article.body not in caplog.text
+
+
+@pytest.mark.parametrize("failure", ["scrape", "write", "commit"])
+def test_ingest_failure_logs_are_safe_and_never_claim_rollback_writes_committed(
+    session, blob_store, monkeypatch, caplog, failure
+):
+    scraper = _SecretFailureScraper() if failure == "scrape" else _ReturnedArticleScraper(_article())
+    monkeypatch.setattr(ingest_core, "build_scrapers", lambda: [scraper])
+    caplog.set_level("INFO", logger="pipeline.ingest_core")
+
+    @contextmanager
+    def failure_scope():
+        try:
+            yield session
+            if failure == "commit":
+                raise RuntimeError(SECRET_TEXT)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    def failed_write(*args, **kwargs):
+        raise RuntimeError(SECRET_TEXT)
+
+    if failure == "write":
+        monkeypatch.setattr(ingest_core, "ingest_article", failed_write)
+    monkeypatch.setattr(ingest_core, "get_core_session", failure_scope)
+    stats = ingest_core.run_core_ingestion(blob_store=blob_store)
+    logs = [r.getMessage() for r in caplog.records if r.name == "pipeline.ingest_core"]
+    assert stats.inserted == 0
+    assert not any(m.startswith("ingest_source_committed ") for m in logs)
+    assert "reason=unexpected_error" in logs[-1]
+    if failure != "scrape":
+        assert "inserted_count=0 skipped_existing_count=0" in logs[-1]
+    assert SECRET_TEXT not in caplog.text
+    assert all(r.exc_info is None for r in caplog.records if r.name == "pipeline.ingest_core")

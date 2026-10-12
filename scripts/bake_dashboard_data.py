@@ -662,6 +662,7 @@ def _publish_staged_snapshot(
     data: dict[str, Any],
     country_pages: dict[str, dict[str, Any]],
     out_path: Path,
+    atlas: dict[str, Any] | None = None,
 ) -> None:
     """Stage every JSON file, then make the main snapshot the commit marker.
 
@@ -697,6 +698,8 @@ def _publish_staged_snapshot(
         write_data_json(data, staged_data)
         for page in country_pages.values():
             write_data_json(page, staged_countries / f"{page['slug']}.json")
+        if atlas is not None:
+            write_data_json(atlas, staged_countries / "_atlas.json")
 
         had_data = out_path.exists()
         had_countries = countries_path.exists()
@@ -734,24 +737,52 @@ def publish_snapshot_bundle(
     data: dict[str, Any],
     country_pages: dict[str, dict[str, Any]],
     out_path: Path,
+    *,
+    atlas: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Validate and publish one dashboard/country snapshot candidate."""
-    validated_data, validated_pages = validate_snapshot_bundle(
-        data, country_pages
-    )
-    _publish_staged_snapshot(validated_data, validated_pages, out_path)
+    """Validate and stage one local candidate; this does not deploy anything."""
+    if atlas is None:
+        validated_data, validated_pages = validate_snapshot_bundle(data, country_pages)
+    else:
+        from src.contracts.atlas import validate_atlas_bundle
+
+        validated_data, validated_pages, atlas = validate_atlas_bundle(data, country_pages, atlas)
+    _publish_staged_snapshot(validated_data, validated_pages, out_path, atlas=atlas)
     return validated_data, validated_pages
 
 
-def run_bake(out_path: Path, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[str, Any]:
+def run_bake(
+    out_path: Path,
+    recent_limit: int = RECENT_LIMIT_DEFAULT,
+    *,
+    include_atlas: bool = False,
+) -> dict[str, Any]:
+    """Bake v1 as before, or explicitly opt into the additive archive candidate.
+
+    No existing workflow opts in. An archive bundle must use one repeatable
+    read view, including v1 files, so cross-file validation compares the same
+    database generation rather than just matching independently read counts.
+    """
     generated_at = datetime.now(timezone.utc).isoformat()
-    with get_core_session() as session:
+    atlas = None
+    if include_atlas:
+        from scripts.bake_atlas import archive_read_session
+        from src.store.database import get_core_engine
+
+        session_context = archive_read_session(get_core_engine())
+    else:
+        session_context = get_core_session()
+    with session_context as session:
         data = bake(
             session,
             recent_limit=recent_limit,
             generated_at=generated_at,
         )
         country_pages = bake_country_pages(session, generated_at=generated_at)
+        if include_atlas:
+            from scripts.bake_atlas import bake_atlas
+
+            atlas = bake_atlas(session, generated_at)
 
     # The index the main dashboard links from: name, slug, count. The heavy
     # per-country payloads stay in their own files.
@@ -760,6 +791,6 @@ def run_bake(out_path: Path, recent_limit: int = RECENT_LIMIT_DEFAULT) -> dict[s
         for page in sorted(country_pages.values(), key=lambda p: p["total"], reverse=True)
     ]
 
-    data, country_pages = publish_snapshot_bundle(data, country_pages, out_path)
+    data, country_pages = publish_snapshot_bundle(data, country_pages, out_path, atlas=atlas)
 
     return data

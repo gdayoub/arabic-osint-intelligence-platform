@@ -1,0 +1,44 @@
+{
+  "articles": [
+    {
+      "collected_at": "2026-08-20T00:00:00+00:00",
+      "country": "Syria",
+      "entity_ids": [
+        "10"
+      ],
+      "escalation": "high",
+      "id": "1",
+      "published_date": "2026-08-19T23:00:00+00:00",
+      "source": "AlJazeeraArabic",
+      "title": "خبر <script>alert('x')</script> & دليل عربي",
+      "title_en": "Arabic evidence <not markup>",
+      "topic": "Politics",
+      "url": "https://example.com/source?id=1&lang=ar"
+    }
+  ],
+  "atlas_version": 1,
+  "classification": {
+    "name": "rule_based_document_classifier",
+    "version": "2.0.1"
+  },
+  "complete": true,
+  "entities": [
+    {
+      "id": "10",
+      "name": "محمد أحمد",
+      "name_en": null,
+      "object_type": "person",
+      "romanizations": [
+        "mohammed ahmed"
+      ],
+      "surface_forms": [
+        "محمد أحمد"
+      ]
+    }
+  ],
+  "entity_id_scope": "snapshot_local",
+  "generated_at": "2026-08-20T00:00:00+00:00",
+  "scope": "current_processed_live_documents",
+  "snapshot_id": "sha256:e5c8058fa37f78f0742fd41ca6905e5f0e95356a0b65e96faafef9df51f484a4",
+  "translation_scope": "cached_machine_translation"
+}

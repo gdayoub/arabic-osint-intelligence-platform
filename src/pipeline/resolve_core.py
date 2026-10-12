@@ -7,10 +7,10 @@ mention attached as evidence.
 
 this is a full recompute and not an incremental update. resolution is global
 by nature: a new mention can merge two clusters that were separate
-yesterday, so there is no correct way to resolve one mention on its own. at
-the current corpus size a recompute takes seconds. if it stops taking
-seconds the fix is incremental blocking and not a smarter loop, and P7 says
-measure before building that.
+yesterday, so there is no correct way to resolve one mention on its own. phase
+timings show where the recompute spends its time before any incremental
+redesign. An empty-constraint fast path avoids pair checks that cannot
+possibly change the grouping; P7 measurements live in benchmarks/results.md.
 
 previous entities get retracted rather than deleted (P6) so the history of
 what the system believed stays answerable.
@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from time import monotonic
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -49,6 +52,47 @@ EXTRACTOR_NAME = "pair_scorer_resolver"
 # queue.  Retraining config/pair_scorer_weights.json must also bump this
 # version so a changed scorer produces a new immutable queue snapshot (P4).
 EXTRACTOR_VERSION = "1.1.0"
+
+
+# A fixed allowlist keeps diagnostic fields bounded and content-free. Values
+# are counts only: no names, IDs, article text, SQL, or exception messages.
+_PHASE_COUNTERS = (
+    "mentions", "decisions", "cannot_links", "groups", "representatives",
+    "accepted_pairs", "rejected_pairs", "candidate_pairs", "full_pairs",
+    "scored_pairs", "matched_pairs", "review_pairs_queued", "clusters",
+    "entities_retracted", "entities_created", "evidence_mentions",
+)
+
+
+@contextmanager
+def _resolution_phase(name: str) -> Iterator[dict[str, int]]:
+    """Time one fixed phase, not every row. Success does not imply commit.
+
+    The context manager always logs completion or a safe failure on exit.
+    ``monotonic`` measures elapsed time independently of wall-clock changes.
+    Callers fill the yielded dictionary with counts when they know them.
+    """
+    started = monotonic()
+    counters: dict[str, int] = {}
+    logger.info("resolve_phase_started phase=%s", name)
+    try:
+        yield counters
+    except Exception:
+        logger.error(
+            "resolve_phase_failed phase=%s elapsed_seconds=%.6f reason=unexpected_error",
+            name, monotonic() - started,
+        )
+        raise
+    else:
+        safe_counts = "".join(
+            f" {key}={counters[key]}"
+            for key in _PHASE_COUNTERS
+            if type(counters.get(key)) is int and counters[key] >= 0
+        )
+        logger.info(
+            "resolve_phase_succeeded phase=%s elapsed_seconds=%.6f%s",
+            name, monotonic() - started, safe_counts,
+        )
 
 
 @dataclass(slots=True)
@@ -161,6 +205,18 @@ def _partition_on_cannot_links(
     that collapse.  Greedy placement is deliberately simple: each mention
     joins the first subgroup containing nobody it is forbidden to match.
     """
+    if not cannot_links:
+        # With no forbidden pair every member joined the first partition in
+        # the original loop. Keep its sorted order (and empty-input result)
+        # without doing n * (n - 1) / 2 membership checks.
+        ordered_members = sorted(members)
+        for index in range(1, len(ordered_members)):
+            if ordered_members[index - 1] == ordered_members[index]:
+                # Preserve ordered_pair's existing rejection of duplicate
+                # mention IDs, without comparing every distinct pair.
+                ordered_pair(ordered_members[index - 1], ordered_members[index])
+        return [ordered_members] if ordered_members else []
+
     partitions: list[list[int]] = []
     for mention_id in sorted(members):
         for partition in partitions:
@@ -204,34 +260,50 @@ def resolve_all(
     # ``session.execute`` in the PostgreSQL advisory-lock helper would trigger
     # autoflush by default.  Keep caller-pending entity changes behind the
     # shared lock, then deliberately flush them below.
-    with session.no_autoflush:
-        acquire_resolution_output_lock(session)
-    session.flush()
-    adapter = adapter or ArabicAdapter()
-    scorer = scorer or PairScorer()
-    gazetteer = gazetteer if gazetteer is not None else GazetteerExtractor()
-    stats = ResolveStats()
+    with _resolution_phase("acquire_output_lock"):
+        with session.no_autoflush:
+            acquire_resolution_output_lock(session)
 
-    contexts = load_mention_contexts(session, adapter)
-    stats.mentions = len(contexts)
+    with _resolution_phase("flush_pending"):
+        session.flush()
+
+    with _resolution_phase("initialize"):
+        adapter = adapter or ArabicAdapter()
+        scorer = scorer or PairScorer()
+        gazetteer = gazetteer if gazetteer is not None else GazetteerExtractor()
+        stats = ResolveStats()
+
+    with _resolution_phase("load_contexts") as phase:
+        contexts = load_mention_contexts(session, adapter)
+        stats.mentions = len(contexts)
+        phase["mentions"] = stats.mentions
+
     if not contexts:
         # An all-retracted corpus is still a resolver generation.  Retiring
         # its prior disposable entities lets an explicit observer record an
         # honest all-absent stable snapshot instead of seeing stale output.
-        stats.entities_retracted = _retract_live_entities(session)
+        with _resolution_phase("retract_entities") as phase:
+            stats.entities_retracted = _retract_live_entities(session)
+            phase["entities_retracted"] = stats.entities_retracted
         return stats
 
-    mention_rows = {
-        row.id: row
-        for row in session.scalars(
-            select(MentionORM).where(MentionORM.id.in_(list(contexts)))
-        ).all()
-    }
-    raw_text = {mid: row.text for mid, row in mention_rows.items()}
-    decisions = latest_decisions(session)
-    mention_cannot_links = {
-        pair for pair, decision in decisions.items() if decision.decision == "different"
-    }
+    with _resolution_phase("load_mentions") as phase:
+        mention_rows = {
+            row.id: row
+            for row in session.scalars(
+                select(MentionORM).where(MentionORM.id.in_(list(contexts)))
+            ).all()
+        }
+        raw_text = {mid: row.text for mid, row in mention_rows.items()}
+        phase["mentions"] = len(mention_rows)
+
+    with _resolution_phase("load_constraints") as phase:
+        decisions = latest_decisions(session)
+        mention_cannot_links = {
+            pair for pair, decision in decisions.items() if decision.decision == "different"
+        }
+        phase["decisions"] = len(decisions)
+        phase["cannot_links"] = len(mention_cannot_links)
 
     # collapse exact duplicates BEFORE blocking. this turned out to matter a
     # lot and I missed it on the first pass.
@@ -259,170 +331,196 @@ def resolve_all(
     # unknown names still group only with byte identical twins and go to the
     # learned scorer from there. same split as M3: dictionary where it knows,
     # model where it does not.
-    groups: dict[tuple[str, str], list[int]] = defaultdict(list)
-    for mention_id, context in contexts.items():
-        known = gazetteer.canonical_for(context.normalized_name) if gazetteer else None
-        # only trust the dictionary when it agrees with how the mention was
-        # typed. سوريا is a location in the gazetteer, so a mention tagged
-        # person with that text is a disagreement and not an identity, and
-        # taking the dictionary's word for it would merge a person into a
-        # country. on disagreement I fall back to grouping by surface form.
-        if known and known[0] != context.object_type:
-            known = None
-        key = known if known else (context.object_type, context.normalized_name)
-        groups[key].append(mention_id)
+    with _resolution_phase("group_mentions") as phase:
+        groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+        for mention_id, context in contexts.items():
+            known = gazetteer.canonical_for(context.normalized_name) if gazetteer else None
+            # only trust the dictionary when it agrees with how the mention was
+            # typed. سوريا is a location in the gazetteer, so a mention tagged
+            # person with that text is a disagreement and not an identity, and
+            # taking the dictionary's word for it would merge a person into a
+            # country. on disagreement I fall back to grouping by surface form.
+            if known and known[0] != context.object_type:
+                known = None
+            key = known if known else (context.object_type, context.normalized_name)
+            groups[key].append(mention_id)
+        phase["groups"] = len(groups)
 
-    partitioned_groups = [
-        (key, partition)
-        for key, members in groups.items()
-        for partition in _partition_on_cannot_links(members, mention_cannot_links)
-    ]
-    representatives = {members[0]: members for _key, members in partitioned_groups}
-    representative_for_mention = {
-        mention_id: representative
-        for representative, members in representatives.items()
-        for mention_id in members
-    }
-    # remember which groups the dictionary named so the entity keeps that
-    # name instead of one derived from surface frequency
-    gazetteer_names = {
-        members[0]: key[1]
-        for key, members in partitioned_groups
-        if gazetteer and gazetteer.canonical_for(contexts[members[0]].normalized_name) == key
-    }
-    stats.exact_duplicate_groups = len(representatives)
+    with _resolution_phase("partition_groups") as phase:
+        partitioned_groups = [
+            (key, partition)
+            for key, members in groups.items()
+            for partition in _partition_on_cannot_links(members, mention_cannot_links)
+        ]
+        representatives = {members[0]: members for _key, members in partitioned_groups}
+        representative_for_mention = {
+            mention_id: representative
+            for representative, members in representatives.items()
+            for mention_id in members
+        }
+        # remember which groups the dictionary named so the entity keeps that
+        # name instead of one derived from surface frequency
+        gazetteer_names = {
+            members[0]: key[1]
+            for key, members in partitioned_groups
+            if gazetteer and gazetteer.canonical_for(contexts[members[0]].normalized_name) == key
+        }
+        stats.exact_duplicate_groups = len(representatives)
+        phase["groups"] = len(groups)
+        phase["representatives"] = len(representatives)
+        phase["cannot_links"] = len(mention_cannot_links)
 
-    accepted_pairs: set[tuple[int, int]] = set()
-    rejected_pairs: set[tuple[int, int]] = set()
-    for (left_id, right_id), decision in decisions.items():
-        if left_id not in representative_for_mention or right_id not in representative_for_mention:
-            continue
-        left_rep = representative_for_mention[left_id]
-        right_rep = representative_for_mention[right_id]
-        if left_rep == right_rep:
-            continue
-        pair = ordered_pair(left_rep, right_rep)
-        if decision.decision == "same":
-            accepted_pairs.add(pair)
-        else:
-            rejected_pairs.add(pair)
-    stats.human_constraints_applied = len(accepted_pairs) + len(rejected_pairs)
+    with _resolution_phase("remap_constraints") as phase:
+        accepted_pairs: set[tuple[int, int]] = set()
+        rejected_pairs: set[tuple[int, int]] = set()
+        for (left_id, right_id), decision in decisions.items():
+            if left_id not in representative_for_mention or right_id not in representative_for_mention:
+                continue
+            left_rep = representative_for_mention[left_id]
+            right_rep = representative_for_mention[right_id]
+            if left_rep == right_rep:
+                continue
+            pair = ordered_pair(left_rep, right_rep)
+            if decision.decision == "same":
+                accepted_pairs.add(pair)
+            else:
+                rejected_pairs.add(pair)
+        stats.human_constraints_applied = len(accepted_pairs) + len(rejected_pairs)
+        phase["accepted_pairs"] = len(accepted_pairs)
+        phase["rejected_pairs"] = len(rejected_pairs)
 
     # block first. a pair that shares no key never gets scored.
-    blocker = KeyBlocker(max_block_size=max_block_size)
-    candidates = blocker.candidate_pairs(
-        {mid: set(contexts[mid].blocking_keys) for mid in representatives}
-    )
-    stats.candidate_pairs = len(candidates)
-    stats.full_pairs = blocker.last_stats.full_pairs
+    with _resolution_phase("blocking") as phase:
+        blocker = KeyBlocker(max_block_size=max_block_size)
+        candidates = blocker.candidate_pairs(
+            {mid: set(contexts[mid].blocking_keys) for mid in representatives}
+        )
+        stats.candidate_pairs = len(candidates)
+        stats.full_pairs = blocker.last_stats.full_pairs
+        phase["candidate_pairs"] = stats.candidate_pairs
+        phase["full_pairs"] = stats.full_pairs
 
-    resolver_version = register_extractor_version(
-        session,
-        EXTRACTOR_NAME,
-        EXTRACTOR_VERSION,
-        description="Multi-key blocking, logistic regression pair scorer, union find with complete linkage split",
-    )
+    with _resolution_phase("register_version"):
+        resolver_version = register_extractor_version(
+            session,
+            EXTRACTOR_NAME,
+            EXTRACTOR_VERSION,
+            description="Multi-key blocking, logistic regression pair scorer, union find with complete linkage split",
+        )
 
-    scores: dict[tuple[int, int], float] = {}
-    matched: set[tuple[int, int]] = set(accepted_pairs)
-    scored_candidates = []
-    for a, b in candidates:
-        ca, cb = contexts[a], contexts[b]
-        # never merge across object types. a person and a place sharing a
-        # name is a coincidence and not an identity.
-        if ca.object_type != cb.object_type:
-            continue
-        features = compute_features(ca, cb)
-        probability = scorer.probability(features)
-        pair = ordered_pair(a, b)
-        scores[pair] = probability
-        scored_candidates.append((ca, cb, probability, features))
-        if probability >= scorer.weights.threshold and pair not in rejected_pairs:
-            matched.add(pair)
+    with _resolution_phase("scoring") as phase:
+        scores: dict[tuple[int, int], float] = {}
+        matched: set[tuple[int, int]] = set(accepted_pairs)
+        scored_candidates = []
+        for a, b in candidates:
+            ca, cb = contexts[a], contexts[b]
+            # never merge across object types. a person and a place sharing a
+            # name is a coincidence and not an identity.
+            if ca.object_type != cb.object_type:
+                continue
+            features = compute_features(ca, cb)
+            probability = scorer.probability(features)
+            pair = ordered_pair(a, b)
+            scores[pair] = probability
+            scored_candidates.append((ca, cb, probability, features))
+            if probability >= scorer.weights.threshold and pair not in rejected_pairs:
+                matched.add(pair)
+        phase["scored_pairs"] = len(scored_candidates)
+        phase["matched_pairs"] = len(matched)
 
     # A fixed uncertainty band can be empty when a poorly calibrated model
     # is confidently wrong about the whole production distribution.  That is
     # exactly when labels are most valuable.  Prefer pairs inside the band,
     # then fill the remaining review budget with the closest scores outside
     # it so the queue can never be empty while candidates exist.
-    ranked_for_review = sorted(
-        scored_candidates,
-        key=lambda item: abs(item[2] - scorer.weights.threshold),
-    )
-    in_band = [
-        item
-        for item in ranked_for_review
-        if abs(item[2] - scorer.weights.threshold) <= review_margin
-    ]
-    selected_for_review = in_band[:review_limit]
-    if len(selected_for_review) < review_limit:
-        selected_ids = {(item[0].mention_id, item[1].mention_id) for item in selected_for_review}
-        for item in ranked_for_review:
-            pair_ids = (item[0].mention_id, item[1].mention_id)
-            if pair_ids in selected_ids:
-                continue
-            selected_for_review.append(item)
-            selected_ids.add(pair_ids)
-            if len(selected_for_review) >= review_limit:
-                break
+    with _resolution_phase("queue_review") as phase:
+        ranked_for_review = sorted(
+            scored_candidates,
+            key=lambda item: abs(item[2] - scorer.weights.threshold),
+        )
+        in_band = [
+            item
+            for item in ranked_for_review
+            if abs(item[2] - scorer.weights.threshold) <= review_margin
+        ]
+        selected_for_review = in_band[:review_limit]
+        if len(selected_for_review) < review_limit:
+            selected_ids = {(item[0].mention_id, item[1].mention_id) for item in selected_for_review}
+            for item in ranked_for_review:
+                pair_ids = (item[0].mention_id, item[1].mention_id)
+                if pair_ids in selected_ids:
+                    continue
+                selected_for_review.append(item)
+                selected_ids.add(pair_ids)
+                if len(selected_for_review) >= review_limit:
+                    break
 
-    for ca, cb, probability, features in selected_for_review:
-        if enqueue_review_pair(
-            session,
-            ca,
-            cb,
-            probability,
-            scorer.weights.threshold,
-            features,
-            resolver_version,
-        ):
-            stats.review_pairs_queued += 1
+        for ca, cb, probability, features in selected_for_review:
+            if enqueue_review_pair(
+                session,
+                ca,
+                cb,
+                probability,
+                scorer.weights.threshold,
+                features,
+                resolver_version,
+            ):
+                stats.review_pairs_queued += 1
+        phase["review_pairs_queued"] = stats.review_pairs_queued
 
-    for pair in accepted_pairs:
-        scores[pair] = 1.0
-    for pair in rejected_pairs:
-        scores[pair] = 0.0
+    with _resolution_phase("clustering") as phase:
+        for pair in accepted_pairs:
+            scores[pair] = 1.0
+        for pair in rejected_pairs:
+            scores[pair] = 0.0
 
-    stats.matched_pairs = len(matched)
+        stats.matched_pairs = len(matched)
 
-    def similarity(x: int, y: int) -> float:
-        return scores.get(tuple(sorted((x, y))), 0.0)
+        def similarity(x: int, y: int) -> float:
+            return scores.get(tuple(sorted((x, y))), 0.0)
 
-    result = cluster_pairs(
-        representatives.keys(),
-        matched,
-        similarity=similarity,
-        threshold=scorer.weights.threshold,
-        cannot_link_pairs=rejected_pairs,
-    )
-    stats.giant_components_split = result.giant_components_split
-    stats.size_histogram = result.size_histogram
+        result = cluster_pairs(
+            representatives.keys(),
+            matched,
+            similarity=similarity,
+            threshold=scorer.weights.threshold,
+            cannot_link_pairs=rejected_pairs,
+        )
+        stats.giant_components_split = result.giant_components_split
+        stats.size_histogram = result.size_histogram
+        phase["clusters"] = len(result.clusters)
+        phase["matched_pairs"] = stats.matched_pairs
 
     # retract the previous generation before writing the new one. P6 says
     # retract and never delete so last week's answer stays on record.
-    stats.entities_retracted = _retract_live_entities(session)
+    with _resolution_phase("retract_entities") as phase:
+        stats.entities_retracted = _retract_live_entities(session)
+        phase["entities_retracted"] = stats.entities_retracted
 
-    for representative_cluster in result.clusters:
-        # expand each representative back into every mention that shared its
-        # exact normalized form
-        members = [m for rep in representative_cluster for m in representatives[rep]]
-        entity = create_entity(
-            session,
-            object_type=contexts[members[0]].object_type,
-            canonical_name=pick_canonical_name(
-                members, raw_text, gazetteer_names.get(representative_cluster[0])
-            ),
-            properties={
-                "mention_count": len(members),
-                "surface_forms": sorted({raw_text[m] for m in members}),
-            },
-            source_mention=_as_mention(mention_rows[members[0]]),
-            extractor_version=resolver_version,
-            ontology=ontology,
-        )
-        for other in members[1:]:
-            add_entity_evidence(session, entity, _as_mention(mention_rows[other]), resolver_version)
-        stats.entities_created += 1
+    with _resolution_phase("write_entities") as phase:
+        for representative_cluster in result.clusters:
+            # expand each representative back into every mention that shared its
+            # exact normalized form
+            members = [m for rep in representative_cluster for m in representatives[rep]]
+            entity = create_entity(
+                session,
+                object_type=contexts[members[0]].object_type,
+                canonical_name=pick_canonical_name(
+                    members, raw_text, gazetteer_names.get(representative_cluster[0])
+                ),
+                properties={
+                    "mention_count": len(members),
+                    "surface_forms": sorted({raw_text[m] for m in members}),
+                },
+                source_mention=_as_mention(mention_rows[members[0]]),
+                extractor_version=resolver_version,
+                ontology=ontology,
+            )
+            for other in members[1:]:
+                add_entity_evidence(session, entity, _as_mention(mention_rows[other]), resolver_version)
+            stats.entities_created += 1
+        phase["entities_created"] = stats.entities_created
+        phase["evidence_mentions"] = sum(len(members) for members in representatives.values())
 
     return stats
 
@@ -433,11 +531,28 @@ def run_core_resolution(
     review_limit: int = 20,
 ) -> ResolveStats:
     ontology = Ontology.from_yaml(_ONTOLOGY_PATH)
-    with get_core_session() as session:
-        return resolve_all(
-            session,
-            ontology,
-            max_block_size=max_block_size,
-            review_margin=review_margin,
-            review_limit=review_limit,
-        )
+    commit_started: float | None = None
+    try:
+        with get_core_session() as session:
+            stats = resolve_all(
+                session,
+                ontology,
+                max_block_size=max_block_size,
+                review_margin=review_margin,
+                review_limit=review_limit,
+            )
+            commit_started = monotonic()
+            logger.info("resolve_phase_started phase=commit")
+    except Exception:
+        if commit_started is not None:
+            logger.error(
+                "resolve_phase_failed phase=commit elapsed_seconds=%.6f reason=unexpected_error",
+                monotonic() - commit_started,
+            )
+        raise
+    logger.info(
+        "resolve_phase_succeeded phase=commit elapsed_seconds=%.6f "
+        "entities_created=%d entities_retracted=%d",
+        monotonic() - commit_started, stats.entities_created, stats.entities_retracted,
+    )
+    return stats

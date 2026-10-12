@@ -1,0 +1,114 @@
+{
+  "schema_version": "offline-evidence-v1",
+  "data_kind": "synthetic_fixture",
+  "documents": [
+    {
+      "id": 1,
+      "source": "synthetic-news-fixture",
+      "text": "في تقرير تجريبي، قال مُحَمَّد الأحمد إن المكتبة ستفتح أبوابها غداً. وأضاف أن الدخول مجاني.",
+      "content_hash": "fixture-ingest-1",
+      "text_sha256": "27ffce952fe4ce42b7f96f2e7953ae2625c583f1214e80fb5026e27dff63b6cf",
+      "text_length": 90,
+      "language": "ar",
+      "url": "https://example.invalid/fixture/1"
+    },
+    {
+      "id": 2,
+      "source": "synthetic-news-fixture",
+      "text": "🗞️ اجتمع محمد الأحمد مع علي حسن في المركز الثقافي.\n\nناقش علي حسن برنامج القراءة الجديد.",
+      "content_hash": "fixture-ingest-2",
+      "text_sha256": "226cf307daea91bbdd5565780a4f87b9282ab49422bba65eb095bd38de50830f",
+      "text_length": 87,
+      "language": "ar",
+      "url": "https://example.invalid/fixture/2"
+    }
+  ],
+  "entities": [
+    {
+      "id": 1,
+      "canonical_name": "محمد الأحمد",
+      "object_type": "person",
+      "language": "ar"
+    },
+    {
+      "id": 2,
+      "canonical_name": "علي حسن",
+      "object_type": "person",
+      "language": "ar"
+    }
+  ],
+  "mentions": [
+    {
+      "id": 1,
+      "document_id": 1,
+      "text": "مُحَمَّد الأحمد",
+      "start": 21,
+      "end": 36,
+      "object_type": "person",
+      "extractor_version_id": 1
+    },
+    {
+      "id": 2,
+      "document_id": 2,
+      "text": "محمد الأحمد",
+      "start": 9,
+      "end": 20,
+      "object_type": "person",
+      "extractor_version_id": 1
+    },
+    {
+      "id": 3,
+      "document_id": 2,
+      "text": "علي حسن",
+      "start": 24,
+      "end": 31,
+      "object_type": "person",
+      "extractor_version_id": 1
+    },
+    {
+      "id": 4,
+      "document_id": 2,
+      "text": "علي حسن",
+      "start": 57,
+      "end": 64,
+      "object_type": "person",
+      "extractor_version_id": 1
+    }
+  ],
+  "memberships": [
+    {
+      "entity_id": 1,
+      "mention_id": 1
+    },
+    {
+      "entity_id": 1,
+      "mention_id": 2
+    },
+    {
+      "entity_id": 2,
+      "mention_id": 3
+    },
+    {
+      "entity_id": 2,
+      "mention_id": 4
+    }
+  ],
+  "extractor_versions": [
+    {
+      "id": 1,
+      "name": "synthetic_fixture_extractor",
+      "version": "1.0.0"
+    }
+  ],
+  "aliases": [
+    {
+      "entity_id": 1,
+      "text": "Mohammed al-Ahmad",
+      "language": "en",
+      "evidence_mention_id": 1,
+      "verifier": "synthetic-fixture-author",
+      "verification_ref": "fixture:example-alias-attestation-only"
+    }
+  ],
+  "translations": []
+}
