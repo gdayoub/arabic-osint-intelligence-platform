@@ -45,3 +45,12 @@ dist/
 
 # hypothesis keeps a database of failing examples plus temp files
 .hypothesis/
+
+# The small retrieval snapshot is tracked for cross-computer continuity.
+# Runtime files and the owner's private guide stay local.
+/.project-guide.md
+/retrieval-exercise/.venv*/
+/retrieval-exercise/**/__pycache__/
+/retrieval-exercise/models/
+/retrieval-exercise/cache/
+/retrieval-exercise/data/labels/ui-test-*

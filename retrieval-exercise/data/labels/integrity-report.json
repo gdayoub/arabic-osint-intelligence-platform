@@ -1,0 +1,64 @@
+{
+  "documents": 50,
+  "unique_text_hashes": 50,
+  "sources": 19,
+  "questions": 40,
+  "unique_questions": 40,
+  "candidate_documents": 40,
+  "all_source_hashes_and_lengths_verified": true,
+  "all_original_spans_verified": true,
+  "all_labels_blank": true,
+  "no_training_or_test_eligible": true,
+  "review_json_sha256": "f40defeb8005b5259a0dacdc6cbcb893602e601e381844ec5f3a4456660efba1",
+  "review_markdown_initial_sha256": "d723f9ae486590adceca31b60d69057a2242f9a3d22712302051afdc66773d32",
+  "metadata_flags": [
+    {
+      "id": 8790,
+      "flags": [
+        "published_after_collected"
+      ]
+    },
+    {
+      "id": 13407,
+      "flags": [
+        "missing_published_at"
+      ]
+    },
+    {
+      "id": 2694,
+      "flags": [
+        "published_after_collected"
+      ]
+    },
+    {
+      "id": 905,
+      "flags": [
+        "published_after_collected"
+      ]
+    },
+    {
+      "id": 5425,
+      "flags": [
+        "published_after_collected"
+      ]
+    },
+    {
+      "id": 11952,
+      "flags": [
+        "missing_published_at"
+      ]
+    },
+    {
+      "id": 3423,
+      "flags": [
+        "published_after_collected"
+      ]
+    },
+    {
+      "id": 14477,
+      "flags": [
+        "missing_published_at"
+      ]
+    }
+  ]
+}

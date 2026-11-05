@@ -1,0 +1,5 @@
+# Evidence hashes and original Unicode offsets depend on exact stored bytes.
+# Never convert snapshot line endings when cloning onto another computer.
+/retrieval-exercise/data/** -text -whitespace
+/retrieval-exercise/archive/** -text -whitespace
+/retrieval-exercise/results/** -text -whitespace

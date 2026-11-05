@@ -1,0 +1,11 @@
+{
+  "status": "assistant_flags_for_discussion_not_label_changes",
+  "flags": {
+    "Q03": "The passage explicitly answers no: human safety and effectiveness have not been established. Recommend discussing relevant.",
+    "Q08": "The passage gives Siliana, Kef, Kasserine and 20-40 mm. Clarify what requested information was considered missing.",
+    "Q10": "The question requests the hospital name, but the passage gives only the city. Relevant may overstate answer support; adjudicate partial versus irrelevant under the rubric.",
+    "Q25": "The passage supplies no numeric gold price. Clarify that partial topical relevance does not mean the requested amount was answered.",
+    "Q37": "The question requests Asian LNG spot prices; the passage gives Brent and WTI crude prices. These are different commodities and price measures.",
+    "Q38": "The passage gives three hospitals but no hospital names. Recommend discussing partly_relevant."
+  }
+}

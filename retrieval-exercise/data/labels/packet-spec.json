@@ -1,0 +1,362 @@
+[
+  {
+    "question_id": "Q01",
+    "legacy_document_id": 3748,
+    "query_en": "Which shipping strait did Pakistan's army chief discuss reopening in his talks with Iran?",
+    "start_anchor": "قال الجيش الباكستاني",
+    "end_anchor": "عبر ​التفاوض.",
+    "english_gloss": "Pakistan's army said on Tuesday that its chief, Asim Munir, held talks with Iran focused on measures including preventing further escalation of the conflict and reopening the Strait of Hormuz. The statement added that Munir discussed regional peace and ways to reach a negotiated settlement of disputes.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q02",
+    "legacy_document_id": 4481,
+    "query_en": "What object did police find in the truck parked illegally near the US Capitol?",
+    "start_anchor": "ألقت",
+    "end_anchor": ".",
+    "english_gloss": "US Capitol Police arrested a man from California after finding a guillotine in the bed of his truck, which was parked illegally near the Capitol complex in Washington.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q03",
+    "legacy_document_id": 8790,
+    "query_en": "Does the reported EP2 study establish that targeting this receptor is safe and effective in humans?",
+    "start_anchor": "لكن الباحثين يؤكدون",
+    "end_anchor": "لدى البشر أو سلامته.",
+    "english_gloss": "The researchers stress that the findings are still at an early stage and do not mean there is currently a treatment for aging: the effectiveness and safety of targeting EP2 in humans have not yet been established.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q04",
+    "legacy_document_id": 3877,
+    "query_en": "Who produced Filmed in Gaza, and which award did the documentary win?",
+    "start_anchor": "غزة 29-5-2026",
+    "end_anchor": "المتواصل على القطاع .",
+    "english_gloss": "Gaza, 29 May 2026, WAFA: The documentary Filmed in Gaza, produced by the American network NBC News, won an international Emmy award for news and documentaries after documenting Palestinian journalists' work in Gaza during what the report describes as the continuing Israeli offensive.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q05",
+    "legacy_document_id": 4179,
+    "query_en": "What exact total amount did the suspect collect through the alleged fake compensation committee?",
+    "start_anchor": "كما وجّه المحقق",
+    "end_anchor": "من المتضررين.",
+    "english_gloss": "The investigator also directed the relevant experts to inventory the transactions carried out by the accused and determine the amount of money collected from those affected.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q06",
+    "legacy_document_id": 13703,
+    "query_en": "Which two novels were compared in Rateb Sukkar's Damascus lecture about literary settings?",
+    "start_anchor": "أقيمت في مقر",
+    "end_anchor": "أونوريه دي بلزاك.",
+    "english_gloss": "A lecture at the Arab Writers Union headquarters in Damascus on Thursday was delivered by Syrian writer Dr. Rateb Sukkar, with short-story writer Abdullah al-Naffakh participating. It compared setting in Miramar by Egyptian novelist Naguib Mahfouz and Father Goriot by Honore de Balzac.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q07",
+    "legacy_document_id": 633,
+    "query_en": "What increases in annually burned land did the reported study project under low versus high emissions?",
+    "start_anchor": "ويشير الكاتب إلى أن انخفاض",
+    "end_anchor": "وفق الدراسة.",
+    "english_gloss": "The writer says that low emissions could lead to about 39 percent more land burning annually, whereas high emissions would raise the increase to 192 percent, according to the study.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q08",
+    "legacy_document_id": 5504,
+    "query_en": "Which Tunisian governorates were forecast to receive the heaviest rain on August 30, 2026, and what amounts were expected?",
+    "start_anchor": "أفاد المعهد الوطني",
+    "end_anchor": "أثناء ظهور السحب الرعدية.",
+    "english_gloss": "The National Institute of Meteorology said that on Sunday afternoon, 30 August 2026, thunderstorms and rain would appear in western parts of the north and center, spreading east. Rain would sometimes be heavy in Siliana, Kef, and Kasserine, with the highest amounts between 20 and 40 millimeters, local hail, and gusts temporarily exceeding 70 km/h during thunderstorms.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q09",
+    "legacy_document_id": 13407,
+    "query_en": "Where did the Al-Mulqi family's marriage-proposal delegation meet the Al-Bitar family?",
+    "start_anchor": "عمون - توجّهت",
+    "end_anchor": "ويحفظ الأردن وأهله.",
+    "english_gloss": "Ammon: A delegation from the Al-Mulqi family went to the Al-Bitar family on Friday evening at Al-Fayhaa Association in Shmeisani to ask for the hand of Abdul Latif Salim al-Bitar's daughter for Talha al-Mulqi. The report describes a joyful, affectionate gathering and prayers for the couple and Jordan.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q10",
+    "legacy_document_id": 1055,
+    "query_en": "What was the name of the hospital where Marta Kelly de Oliveira Silva died?",
+    "start_anchor": "وبعد تدهور حالتها الصحية",
+    "end_anchor": "بوحدة العناية المركزة.",
+    "english_gloss": "After her health deteriorated, she was taken to a hospital in the city of Volta Redonda, where she died in intensive care.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q11",
+    "legacy_document_id": 6910,
+    "query_en": "What were Turkey's reported monthly and annual consumer inflation rates for August?",
+    "start_anchor": "أظهرت بيانات معهد",
+    "end_anchor": "31.51%.",
+    "english_gloss": "Data from the Turkish Statistical Institute showed consumer prices rising by 1.84 percent in August compared with the previous month, with annual inflation at 31.51 percent.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q12",
+    "legacy_document_id": 8563,
+    "query_en": "Which four Saudi cities did the coalition spokesman say were targeted, and how many civilians were injured?",
+    "start_anchor": "وأضاف المالكي",
+    "end_anchor": "والمقيمين على أراضيها\".",
+    "english_gloss": "In a statement on X on Tuesday, al-Maliki said the Houthis' latest attacks targeted civilian and economic sites in Abha, Khamis Mushait, Jazan, and Najran, injuring 73 civilians, including women and children. He described the attacks as a violation of Saudi sovereignty and a direct threat to citizens and residents.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q13",
+    "legacy_document_id": 3891,
+    "query_en": "How many CPAP devices did Al-Tadamon Charitable Society provide in its reported assistance project?",
+    "start_anchor": "وضمن المساعدات الانسانية الطبية",
+    "end_anchor": "و3 أجهزة cpap",
+    "english_gloss": "As part of the medical humanitarian assistance, five oxygen generators of 5-liter and 10-liter capacities and three CPAP devices were provided.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q14",
+    "legacy_document_id": 2694,
+    "query_en": "What defense-budget shortfall did Zelensky report, and why did he dismiss the former defense minister?",
+    "start_anchor": "وكشف زيلينسكي عن عجز",
+    "end_anchor": "خلال العام الجاري.",
+    "english_gloss": "Zelensky disclosed a defense-budget shortfall estimated at 27 billion dollars and a decline in Patriot missile supplies. He said Ukraine received 675 missiles in 2023 versus 364 in 2025 and expected 264 during the current year.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q15",
+    "legacy_document_id": 12415,
+    "query_en": "How did the Amazigh teachers' coordination group want the number of classes per teacher to change?",
+    "start_anchor": "وطالبت التنسيقية ذاتها",
+    "end_anchor": "للأساتذة المتخصصين.",
+    "english_gloss": "The coordination group called for reducing the number of classes from eight to four per teacher, increasing the time allocated to Amazigh, supplying textbooks and teaching resources, and ensuring training, support, and inspection for specialist teachers.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q16",
+    "legacy_document_id": 1481,
+    "query_en": "At which political party's conference did Putin make the quoted remarks about Ukrainian attacks?",
+    "start_anchor": "وقال بوتين، خلال مؤتمر",
+    "end_anchor": "القيادة الأوكرانية\".",
+    "english_gloss": "Speaking at a United Russia party conference, Putin said Kyiv's attacks were becoming more brutal and barbaric, which he claimed reflected the nature of the Ukrainian leadership.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q17",
+    "legacy_document_id": 3836,
+    "query_en": "According to the UAE Justice Ministry statement, did the seven sanctioned companies have valid UAE business licenses?",
+    "start_anchor": "وأضاف البيان الإماراتي",
+    "end_anchor": "أعمالها في الدولة”.",
+    "english_gloss": "The UAE statement added: 'The ministry confirms that none of these seven companies has a valid commercial license in the United Arab Emirates, and none conducts its business in the country.'",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q18",
+    "legacy_document_id": 905,
+    "query_en": "Which two ports did Russia's defense ministry say contained the targeted military-equipment and fuel storage sites?",
+    "start_anchor": "وتابع البيان:",
+    "end_anchor": "في ميناءي تشيرنومورسك ويوجني\"",
+    "english_gloss": "The statement continued that on August 22, military-equipment depots and fuel and lubricant tanks designated for the Ukrainian armed forces were targeted at the ports of Chornomorsk and Yuzhny.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q19",
+    "legacy_document_id": 2569,
+    "query_en": "Which authority did Libya's High Council of State say has exclusive jurisdiction to enforce punishments?",
+    "start_anchor": "أعرب المجلس الأعلى",
+    "end_anchor": "للسلطة القضائية.",
+    "english_gloss": "Libya's High Council of State expressed deep concern about executions of Libyan citizens in the east of the country in cases described as terrorism-related and criminal. It stressed that enforcement of punishments is exclusively the judiciary's responsibility.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q20",
+    "legacy_document_id": 14025,
+    "query_en": "Did Israeli police identify the officials they recommended prosecuting in the alleged document-falsification case?",
+    "start_anchor": "وقالت الشرطة إنها حققت",
+    "end_anchor": "ومساعدوه.",
+    "english_gloss": "Police said they investigated at the time following complaints and recommendations, and submitted their summary to prosecutors two years earlier with a clear recommendation to prosecute those responsible. They declined to identify those officials or disclose whether Netanyahu himself was implicated, or only office director Tzachi Braverman and his aides.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q21",
+    "legacy_document_id": 5425,
+    "query_en": "From which club did Chelsea sign Emiliano Martinez, and how long was his reported contract?",
+    "start_anchor": "أعلن نادي تشلسي",
+    "end_anchor": "لمدة ثلاث سنوات.",
+    "english_gloss": "Chelsea, which competes in England's Premier League, announced the signing of goalkeeper Emiliano Martinez from Aston Villa on a three-year contract.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q22",
+    "legacy_document_id": 3878,
+    "query_en": "Which Swedish diplomat met Palestinian National Council chairman Rawhi Fattouh?",
+    "start_anchor": "رام الله 16-6-2026",
+    "end_anchor": "والميدانية.",
+    "english_gloss": "Ramallah, 16 June 2026, WAFA: Palestinian National Council chairman Rawhi Fattouh and Sweden's consul general to the State of Palestine in Jerusalem, Sophie Becker, discussed the latest political and on-the-ground developments on Tuesday.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q23",
+    "legacy_document_id": 1546,
+    "query_en": "Why did electricity cuts disrupt drinking-water supplies in Sorman?",
+    "start_anchor": "أعربت بلدية صرمان",
+    "end_anchor": "بسبب انقطاع الكهرباء.",
+    "english_gloss": "Sorman municipality expressed concern and dissatisfaction over power cuts affecting drinking-water sources. It explained that the city depends mainly on groundwater wells, several of which stopped operating because of the electricity outages.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q24",
+    "legacy_document_id": 11093,
+    "query_en": "Where and at what time was Eman al-Rifai's lecture on agricultural technology scheduled for September 15, 2026?",
+    "start_anchor": "3 – محاضرة بعنوان",
+    "end_anchor": "الـ 5:00 عصراً.",
+    "english_gloss": "3. A lecture titled 'Using technology in agriculture,' delivered by engineer Eman al-Rifai at the Arab Cultural Center in al-Adawi, at 5:00 p.m.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q25",
+    "legacy_document_id": 89,
+    "query_en": "What was the exact record gold price per ounce in US dollars reported for 2026?",
+    "start_anchor": "بلغ سعر الذهب",
+    "end_anchor": "بكميات كبيرة،",
+    "english_gloss": "Gold reached unprecedented record levels in 2026. Global instability, conflicts, and distrust of the US dollar contributed to the rise and encouraged countries to accumulate gold. Gold fluctuated sharply, reaching all-time highs before returning to normal levels. The video explains influences on gold prices, why gold is especially sought after during crises, and why countries store large quantities.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q26",
+    "legacy_document_id": 8028,
+    "query_en": "What was the submission deadline for the Vision+ competition at the 2026 Carthage Film Festival?",
+    "start_anchor": "وتبقى آجال التسجيل",
+    "end_anchor": "inscription.jcc.tn",
+    "english_gloss": "Registration remains open to filmmakers until October 5 to submit their work. Applications must be filed through the global filmmaker registration and submission platform at inscription.jcc.tn.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q27",
+    "legacy_document_id": 11952,
+    "query_en": "From what date did Saleh al-Daaja's appointment as a Ministry of Culture adviser take effect?",
+    "start_anchor": "عمون - صدرت",
+    "end_anchor": "٢٠٢٦/٩/٢١.",
+    "english_gloss": "Ammon: Thursday's Official Gazette published royal approval of the Cabinet decision appointing Saleh Odeh Ghasban al-Khusailat al-Daaja as an adviser on the Ministry of Culture's staff, in the second group of the senior category, effective 21 September 2026.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q28",
+    "legacy_document_id": 3423,
+    "query_en": "What basic-pay increase and bonus did Hyundai's union say it had negotiated?",
+    "start_anchor": "وأوضحت النقابة لوكالة",
+    "end_anchor": "أربعة أشهر».",
+    "english_gloss": "The union told AFP in a statement: 'We agreed to increase monthly basic pay by 100,000 won (72 dollars) and pay a bonus equivalent to four months' salary.'",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q29",
+    "legacy_document_id": 4230,
+    "query_en": "In what city and year did Cheb Rizki recall receiving help from Mohamed El Ghaoui?",
+    "start_anchor": "استحضر محمد رزقي",
+    "end_anchor": "في تلك الفترة.",
+    "english_gloss": "Mohamed Rizki, the retired Moroccan singer known as Cheb Rizki, recalled a personal encounter with the late Mohamed El Ghaoui in Frankfurt, Germany, in 2000, during Rizki's first concert appearance outside Morocco. He praised El Ghaoui's character and treatment of him at that time.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q30",
+    "legacy_document_id": 13023,
+    "query_en": "How did Egypt's non-oil private-sector PMI change between August and September in the report?",
+    "start_anchor": "تراجع نشاط القطاع الخاص",
+    "end_anchor": "بالتطورات الإقليمية.",
+    "english_gloss": "Activity in Egypt's non-oil private sector declined during September, as the purchasing managers' index fell to 47.2 points from 49.6 in August, reflecting weak demand, higher production costs, and continuing uncertainty linked to regional developments.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q31",
+    "legacy_document_id": 3882,
+    "query_en": "Where did Abdul Karim al-Zubaidi meet Italy's consul general Giuseppe Fedele?",
+    "start_anchor": "عقد الاتحاد الفلسطيني",
+    "end_anchor": "شركائه في إيطاليا.",
+    "english_gloss": "The Palestinian Association of Local Authorities, represented by its chairman Abdul Karim al-Zubaidi, met Italy's consul general in Jerusalem, Giuseppe Fedele, at Salfit municipality headquarters. They discussed cooperation between Palestinian and Italian local authorities through joint projects with partners in Italy.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q32",
+    "legacy_document_id": 2738,
+    "query_en": "Between which years did Ahmad Hassoun serve as Syria's grand mufti?",
+    "start_anchor": "- أحمد بدر الدين حسون",
+    "end_anchor": "عام 2021.",
+    "english_gloss": "Ahmad Badr al-Din Hassoun was Syria's former grand mufti for more than 16 years, serving from 2005 until the office was abolished by presidential decree in 2021.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q33",
+    "legacy_document_id": 3834,
+    "query_en": "Which Kenyan candidate pledged unrestricted visas for Africans traveling within the continent?",
+    "start_anchor": "أديس أبابا 8 نوفمبر 2024",
+    "end_anchor": "الذي انتهت ولايته.",
+    "english_gloss": "Addis Ababa, 8 November 2024: A candidate for African Union Commission chair announced an intention to introduce unrestricted visas for Africans traveling within the continent, modeled on the European Union. Kenyan candidate Raila Odinga was competing with a candidate from Djibouti at the following February's summit to succeed Moussa Faki, whose term the report says had ended.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q34",
+    "legacy_document_id": 4554,
+    "query_en": "What cargo was the refrigerated truck carrying when it was robbed on the Cairo-Ismailia desert road?",
+    "start_anchor": "لم تتلقى الوزارة",
+    "end_anchor": "دون شعور السائق.",
+    "english_gloss": "The ministry had received no reports about the incident. Its examination found that on the 25th of the current month the truck shown in the video, belonging to a refrigerated-transport company, was traveling on the Cairo-Ismailia desert road in the al-Shorouk police district to deliver frozen poultry to a company in 10th of Ramadan City. People in a pickup drove behind it and stole some contents without the driver's awareness.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q35",
+    "legacy_document_id": 5024,
+    "query_en": "How many deaths in the preceding 24 hours did Wajih Dhakkar report during Tunisia's heatwave?",
+    "start_anchor": "وبحسب البيانات التي نشرها",
+    "end_anchor": "الأخيرة فقط.",
+    "english_gloss": "According to information published by Wajih Dhakkar, head of the Tunisian Organization of Young Doctors, on Friday night into Saturday, 13 deaths were recorded in the previous 24 hours alone.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q36",
+    "legacy_document_id": 14773,
+    "query_en": "What global growth rate did the IMF associate with AI investment, and exactly how many graduate jobs would be lost?",
+    "start_anchor": "وفيما يقدّر صندوق النقد الدولي",
+    "end_anchor": "في بانكوك.",
+    "english_gloss": "The IMF estimates that these investments help keep global growth at around 3 percent. Meanwhile, the energy-supply shock and rising debt burdens pressure economies, especially developing countries, placing these challenges at the center of the IMF and World Bank annual meetings in Bangkok.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q37",
+    "legacy_document_id": 5676,
+    "query_en": "What was the Asian spot price of liquefied natural gas after the reported attack on Larak Island?",
+    "start_anchor": "وارتفعت العقود الآجلة",
+    "end_anchor": "2.41 بالمئة.",
+    "english_gloss": "Brent crude futures rose 2.22 dollars, or 2.52 percent, to 90.32 dollars a barrel by 22:02 GMT, while US West Texas Intermediate crude stood at 85.41 dollars a barrel, up 2.01 dollars or 2.41 percent.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q38",
+    "legacy_document_id": 11484,
+    "query_en": "How many nongovernmental hospitals in Gaza stopped operating because of fuel shortages, and what were their names?",
+    "start_anchor": "وقال صالحة إن ثلاثة",
+    "end_anchor": "لتشغيل المستشفيات .",
+    "english_gloss": "Salha said that three operating nongovernmental hospitals in Gaza had gone out of service due to fuel shortages. Fuel provision for health facilities had become extremely limited, and WHO had told nongovernmental organizations that it would not be able to supply the fuel needed to run hospitals.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q39",
+    "legacy_document_id": 1338,
+    "query_en": "Which named Nepalese village were people evacuated to during the reported flooding?",
+    "start_anchor": "أدانت وزارة الخارجية",
+    "end_anchor": "ومنشآتها الحيوية.",
+    "english_gloss": "The foreign ministry of Libya's Government of National Unity condemned the attack on Diori Hamani International Airport in Niger's capital, Niamey, describing it as an assault on Niger's security and stability and the safety of its citizens and vital facilities.",
+    "gloss_status": "assistant_draft_unverified"
+  },
+  {
+    "question_id": "Q40",
+    "legacy_document_id": 12379,
+    "query_en": "Approximately how many manuscripts did Ahmad Pasha al-Jazzar's library in Acre contain?",
+    "start_anchor": "نبذة عن الكتاب: دراسة أكاديمية",
+    "end_anchor": "أكثر من 1800 مخطوط،",
+    "english_gloss": "Book overview: A collective academic study of the history of Ahmad Pasha al-Jazzar's library, established in Acre in the late eighteenth century, which contained more than 1,800 manuscripts.",
+    "gloss_status": "assistant_draft_unverified"
+  }
+]

@@ -1,0 +1,115 @@
+BILINGUAL RETRIEVAL: FIRST LABELING BATCH
+
+Status: ALL DRAFTS, UNREVIEWED. No training has occurred.
+
+This packet contains 10 candidate query/evidence judgments and one proposed unanswerable query. Questions were generated from evidence; they are teaching examples, not a representative test set. Facts below are claims in the articles, not independent verification.
+
+Review one example at a time. Judge whether the English question is useful, whether the gloss answers it, and what detail is missing. Arabic-capable review must check each gloss against the original before a label becomes trusted.
+
+draft-001
+QUERY: According to the Nepal flood report, where were residents instructed to go?
+DOCUMENT: 15008 | 57faead6-fa17-4137-97ca-dab9434756f3
+SOURCE: https://www.alkhaleej.ae/2026-10-11/عرب-وعالم/العالم/نيبال-تتشح-بالرعب-الطوفان-يضرب-مجددا
+ENGLISH GLOSS (unreviewed): The National Disaster Risk Management Authority issued urgent warnings telling residents to move immediately to higher ground.
+ORIGINAL ARABIC: أصدرت الهيئة الوطنية لإدارة مخاطر الكوارث تحذيراتٍ مشددة للأهالي بضرورة التوجه فوراً نحو المناطق المرتفعة
+ORIGINAL CODE-POINT SPAN: [297, 402)
+DRAFT REASON: The proposed span directly states the instruction and destination.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-002
+QUERY: According to the Nepal flood report, villagers along which river were being evacuated?
+DOCUMENT: 15008 | 57faead6-fa17-4137-97ca-dab9434756f3
+SOURCE: https://www.alkhaleej.ae/2026-10-11/عرب-وعالم/العالم/نيبال-تتشح-بالرعب-الطوفان-يضرب-مجددا
+ENGLISH GLOSS (unreviewed): Authorities raised the alert level on Sunday and rushed to evacuate hundreds of villagers along the Budhi Gandaki River after flash floods hit homes and buildings and displaced dozens.
+ORIGINAL ARABIC: في إقليم الشمال الأوسط النائي، عادت الطبيعة لتصاغ بأسلوبها القاسي، حيث رفعت السُّلطات النيبالية حالة الاستنفار القصوى الأحد، مُسارعةً لإجلاء المئات من القرويين القاطنين على ضفاف نهر «بودي جانداكي» إثر تدفق سيولٍ جارفة داهمت المنازل والمنشآت وشردت العشرات
+ORIGINAL CODE-POINT SPAN: [41, 295)
+DRAFT REASON: The proposed span identifies the river and connects it to the evacuation.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-003
+QUERY: Which bacterium did Britain's Food Standards Agency report finding in the imported eggs?
+DOCUMENT: 15072 | 4e165946-5263-4ef3-a9d3-626ed1a0d19c
+SOURCE: https://www.akhbarona.com/health/433965.html
+ENGLISH GLOSS (unreviewed): The British Food Standards Agency announced on Saturday, 10 October 2026, that Salmonella Enteritidis had been found in eggs imported from one Ukrainian company, prompting a recall.
+ORIGINAL ARABIC: وأعلنت وكالة معايير الأغذية البريطانية، السبت 10 أكتوبر 2026، اكتشاف بكتيريا «السالمونيلا إنتريتيديس» في بيض مستورد من شركة أوكرانية واحدة، ما استدعى إصدار إشعار رسمي بسحب الدفعات المتأثرة واسترجاعها من الأسواق
+ORIGINAL CODE-POINT SPAN: [490, 700)
+DRAFT REASON: The proposed span explicitly names the bacterium.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-004
+QUERY: Were locally produced British eggs included in the recall described in the article?
+DOCUMENT: 15072 | 4e165946-5263-4ef3-a9d3-626ed1a0d19c
+SOURCE: https://www.akhbarona.com/health/433965.html
+ENGLISH GLOSS (unreviewed): The agency said the eggs covered by the warning were not sold by major supermarket chains, and locally produced British products were not affected by the recall.
+ORIGINAL ARABIC: وأكدت الوكالة أن البيض المشمول بالتحذير لا يُباع في سلاسل المتاجر الكبرى، وأن المنتجات البريطانية المحلية غير معنية بقرار السحب
+ORIGINAL CODE-POINT SPAN: [917, 1044)
+DRAFT REASON: The proposed span explicitly excludes locally produced British products; negation must be checked carefully.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-005
+QUERY: For what dates did Gulf Air announce cancellations of flights to and from Riyadh?
+DOCUMENT: 15053 | 899a767c-cf12-44bb-b65d-1325b47056cd
+SOURCE: https://www.alchourouk.com/article/%D8%B4%D8%B1%D9%83%D8%A7%D8%AA-%D8%B7%D9%8A%D8%B1%D8%A7%D9%86-%D8%AA%D9%84%D8%BA%D9%8A-%D8%B1%D8%AD%D9%84%D8%A7%D8%AA%D9%87%D8%A7-%D8%A8%D8%A7%D8%AA%D8%AC%D8%A7%D9%87-%D8%A7%D9%84%D8%B1%D9%8A%D8%A7%D8%B6
+ENGLISH GLOSS (unreviewed): In its statement, Gulf Air informed passengers that flights to and from Riyadh were cancelled from 12 to 17 October 2026.
+ORIGINAL ARABIC: وقالت الشركة في بيان "تود طيران الخليج إخطار المسافرين بإلغاء رحلاتها من وإلى الرياض خلال الفترة من 12 أكتوبر إلى 17 أكتوبر 2026
+ORIGINAL CODE-POINT SPAN: [287, 415)
+DRAFT REASON: The proposed span names the airline and date range.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-006
+QUERY: Which airport systems were reportedly damaged in the Riyadh flight-cancellation article?
+DOCUMENT: 15053 | 899a767c-cf12-44bb-b65d-1325b47056cd
+SOURCE: https://www.alchourouk.com/article/%D8%B4%D8%B1%D9%83%D8%A7%D8%AA-%D8%B7%D9%8A%D8%B1%D8%A7%D9%86-%D8%AA%D9%84%D8%BA%D9%8A-%D8%B1%D8%AD%D9%84%D8%A7%D8%AA%D9%87%D8%A7-%D8%A8%D8%A7%D8%AA%D8%AC%D8%A7%D9%87-%D8%A7%D9%84%D8%B1%D9%8A%D8%A7%D8%B6
+ENGLISH GLOSS (unreviewed): The report stated that some airport electronic systems, including radar and communications equipment, had been damaged, and that runway conditions also needed assessment.
+ORIGINAL ARABIC: وأكد تعرض بعض الأنظمة الإلكترونية بالمطار مثل الرادار وأجهزة الاتصال "لأضرار"، مشيرا إلى "أنه يجب أيضا تقييم حالة المدرجات"
+ORIGINAL CODE-POINT SPAN: [777, 900)
+DRAFT REASON: The proposed span names damaged systems. Runway assessment is not evidence of confirmed runway damage.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-007
+QUERY: According to the report, what diesel shipment did Trump say Russia would supply immediately?
+DOCUMENT: 14977 | 35fc6654-8f48-4cb6-a1b0-aef871c24d49
+SOURCE: https://www.aljazeera.net/politics/2026/10/12/أوكرانيا-تدفع-الثمن-هل-يكون-الديزل
+ENGLISH GLOSS (unreviewed): The article reports Trump saying after a call with Putin that Russia would immediately supply more than 300,000 tonnes of diesel to the American and global markets, followed by 500,000 tonnes in November and one million tonnes in December.
+ORIGINAL ARABIC: وكان الرئيس ترمب قد صرح، الجمعة، بأن فلاديمير بوتين سيهبّ لإنقاذ سائقي الشاحنات الأمريكيين، حيث أعلن عقب مكالمة هاتفية مع نظيره الروسي أن موسكو ستضخ على الفور أكثر من 300 ألف طن من الديزل إلى "السوق الأمريكية والعالمية"، على أن تتبعها 500 ألف طن أخرى في نوفمبر/تشرين الثاني، ثم مليون طن إضافي في ديسمبر/كانون الأول
+ORIGINAL CODE-POINT SPAN: [800, 1114)
+DRAFT REASON: The proposed span supplies the immediate quantity and distinguishes it from later quantities; this is a reported claim, not independently verified shipment evidence.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-008
+QUERY: What date does the article give for the upcoming US congressional midterm elections?
+DOCUMENT: 14977 | 35fc6654-8f48-4cb6-a1b0-aef871c24d49
+SOURCE: https://www.aljazeera.net/politics/2026/10/12/أوكرانيا-تدفع-الثمن-هل-يكون-الديزل
+ENGLISH GLOSS (unreviewed): While Kyiv sought to weaken Moscow's war financing by targeting oil facilities, Trump sought Russian diesel supplies to contain fuel prices before the congressional midterms on 3 November.
+ORIGINAL ARABIC: فبينما تحاول كييف إضعاف قدرة موسكو على تمويل غزوها عبر استهداف منشآتها النفطية، يسعى الرئيس الأمريكي دونالد ترمب إلى الإفادة من إمدادات الديزل الروسي لاحتواء ارتفاع أسعار الوقود قبل التجديد النصفي للكونغرس في الثالث من نوفمبر/تشرين الثاني المقبل
+ORIGINAL CODE-POINT SPAN: [316, 561)
+DRAFT REASON: The proposed span states the election date; the year is not explicit in this span.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-009
+QUERY: Which leadership positions received thank-you telegrams in this Bahrain article?
+DOCUMENT: 15100 | 284c9d3c-baf5-4b2a-ad3e-dd8e3f19eb19
+SOURCE: https://akhbar-alkhaleej.com/news/article/1453796
+ENGLISH GLOSS (unreviewed): The king and the crown prince, who is also prime minister, received further thank-you telegrams from senior royal family members and senior officials.
+ORIGINAL ARABIC: الملك وولي العهد رئيس الوزراء يتلقيان مزيدا من برقيات الشكر من كبار أفراد العائلة المالكة وكبار المسؤولين
+ORIGINAL CODE-POINT SPAN: [0, 105)
+DRAFT REASON: The headline supports the leadership positions, but does not supply their personal names.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-010
+QUERY: Which groups sent thank-you telegrams to Bahrain's king and crown prince, according to the headline?
+DOCUMENT: 15100 | 284c9d3c-baf5-4b2a-ad3e-dd8e3f19eb19
+SOURCE: https://akhbar-alkhaleej.com/news/article/1453796
+ENGLISH GLOSS (unreviewed): The king and the crown prince, who is also prime minister, received further thank-you telegrams from senior royal family members and senior officials.
+ORIGINAL ARABIC: الملك وولي العهد رئيس الوزراء يتلقيان مزيدا من برقيات الشكر من كبار أفراد العائلة المالكة وكبار المسؤولين
+ORIGINAL CODE-POINT SPAN: [0, 105)
+DRAFT REASON: The headline names the sender groups; specific individuals require other evidence.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+draft-011
+QUERY: According to the Nepal flood report, exactly how many houses were destroyed?
+DRAFT REASON: The Nepal article reports damage and displacement but gives no exact count of houses destroyed. This is an assistant draft judgment over the sample, not a corpus-wide claim.
+REVIEW: relevant / partly relevant / irrelevant / unsure (not recorded yet)
+
+NEXT CHECKPOINT
+Review draft-001 in English. Then review its Arabic/gloss correspondence with an Arabic-capable reviewer. Do not turn the other four documents into automatic negatives. Do not assign train/validation/test splits until grouping is reviewed.

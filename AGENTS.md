@@ -157,3 +157,10 @@ and buys −0.01 F1.
 
 benchmarks live in `benchmarks/results.md` including the runs that were
 wrong. the failures are the useful part.
+
+## Bilingual retrieval experiment handoff
+
+On branch `experiment/bilingual-retrieval`, read `retrieval-exercise/HANDOFF.md` and
+`retrieval-exercise/AGENTS.md` before continuing. George is writing the model code
+himself; the current lesson is reading one JSON record. No E5 baseline or training has
+run. Maintain the private, ignored root `.project-guide.md` and preserve personal notes.
