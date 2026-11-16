@@ -1,205 +1,163 @@
 # Arabic OSINT Intelligence Platform
 
 ![Python](https://img.shields.io/badge/python-3.11-blue)
-![SQLAlchemy](https://img.shields.io/badge/orm-sqlalchemy%202-red)
-![PostgreSQL](https://img.shields.io/badge/database-postgresql%20%28neon%29-blue)
-![Tests](https://img.shields.io/badge/tests-476%20passing-brightgreen)
+![PostgreSQL](https://img.shields.io/badge/postgresql-neon-336791)
+![SQLAlchemy](https://img.shields.io/badge/sqlalchemy-2.0-red)
 ![Sources](https://img.shields.io/badge/sources-21%20outlets-orange)
-![CI](https://github.com/gdayoub/arabic-osint-intelligence-platform/actions/workflows/tests.yml/badge.svg)
+[![Tests](https://github.com/gdayoub/arabic-osint-intelligence-platform/actions/workflows/tests.yml/badge.svg)](https://github.com/gdayoub/arabic-osint-intelligence-platform/actions/workflows/tests.yml)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-**Live dashboard:** [arabic-osint-dashboard.georgedayoub500.workers.dev](https://arabic-osint-dashboard.georgedayoub500.workers.dev)
-**Also embedded in my portfolio:** [george-dayoub-portfolio.vercel.app/osint-dashboard.html](https://george-dayoub-portfolio.vercel.app/osint-dashboard.html)
+An **entity resolution and link analysis engine** that continuously ingests
+Arabic-language news, extracts the people, places and organizations it
+mentions, and resolves them into a single evidenced set of real-world
+entities, with every fact traceable back to the exact sentence it came from.
 
----
-
-## What this actually is
-
-I made this **entity resolution and link analysis engine**  
-the system that sits behind real intelligence
-tooling built with Arabic language OSINT as its first domain, but designed
-so language and object types are configuration, never Python. The
-architecture doesn't know it's Arabic. It doesn't know it's news!!.
-
-```
-Document  →  Mention  →  Entity  →  Graph
- (raw text)   (a span      (a real      (typed,
-              of chars)    thing)       evidenced
-                                        relationships)
-```
-
-Every fact the system produces — every entity, every classification, every
-merge decision — traces back to the exact document, character span, and
-extractor version that produced it. Nothing is asserted without evidence,
-and nothing is silently overwritten: facts are append-only, retracted by
-state transition rather than deleted, so the system can always answer "what
-did we believe as of a given date."
-
-## Why it's worth a look
-
-- **21 Arabic news sources**, spanning Palestine, Jordan, Morocco, Iraq,
-  Tunisia, Kuwait, Sudan, Yemen, Bahrain, Syria, Egypt, Libya, and Lebanon —
-  each with hand-verified scrapers (every one of them broke in a different
-  way; see [Engineering highlights](#engineering-highlights)).
-- **Entity resolution that's actually evidenced**: a hand-written Aho-Corasick
-  gazetteer plus a transformer NER model, deduplicated through blocking,
-  union-find with a complete-linkage guard, and a review queue for the pairs
-  a human should actually decide — not a black box.
-- **Bilingual by design**: Arabic surface forms, romanization, and
-  machine-translated evidence are stored as distinct, queryable facts, so an
-  English-language query can find an Arabic-only entity without losing the
-  original wording.
-- **Zero idle cost.** The entire public dashboard is static JSON baked by a
-  GitHub Actions cron job and served from a Cloudflare Worker so no server
-  runs when nobody's looking at it.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    A[21 Arabic news sources] --> B[Source scrapers\nbudget-aware, retry-safe]
-    B --> C[(R2 blob storage\ncontent-addressed, gzipped)]
-    B --> D[(Neon PostgreSQL\nmetadata + facts)]
-    D --> E[Topic / escalation\n/ country classifiers]
-    E --> F[Mention extraction\ngazetteer + transformer NER]
-    F --> G[Entity resolution\nblocking + union-find + review queue]
-    G --> H[Bilingual layer\nromanization + translation cache]
-    H --> I[Bake static data.json]
-    I --> J[Cloudflare Worker\nlive dashboard]
-    I --> K[Vercel portfolio\nconsumer]
-```
-
-Runs entirely on free tiers: GitHub Actions (cron, every 6 hours) drives the
-whole pipeline, writes go to Neon Postgres and Cloudflare R2, and the public
-artifact is a single content-addressed JSON file so no always-on API, no
-server bill.
-
-## Dashboard
+**[Live dashboard →](https://arabic-osint-dashboard.georgedayoub500.workers.dev)**
 
 ![Dashboard overview](docs/screenshots/dashboard-overview.png)
 
-![Dashboard feed and review queue](docs/screenshots/dashboard-feed.png)
+---
+
+## At a glance
+
+| | |
+|---|---|
+| **Sources** | 21 Arabic news outlets across 13 countries, scraped every 6 hours |
+| **NLP** | Hand-written Aho-Corasick gazetteer (F1 0.90) + transformer NER, CAMeLBERT (F1 0.89) |
+| **Entity resolution** | Blocking → learned pair scorer (AUC 0.935) → union-find with a complete-linkage guard → human review queue |
+| **Bilingual** | Arabic surface forms, romanization and translations stored as separate facts; English queries find Arabic-only entities |
+| **Reliability** | 476 unit tests, property-based tests (Hypothesis), Alembic migrations, 30 ADRs, append-only pipeline ledger |
+| **Cost** | $0/month: GitHub Actions + Neon + Cloudflare R2/Workers free tiers, no always-on server |
+
+## How it works
+
+```
+Document  →  Mention  →  Entity  →  Graph
+(raw text)   (a span     (a real     (typed, evidenced
+             of chars)   thing)      relationships)
+```
+
+```mermaid
+flowchart LR
+    A[21 Arabic news sources] --> B[Scrapers<br/>budget-aware, retry-safe]
+    B --> C[(Cloudflare R2<br/>content-addressed blobs)]
+    B --> D[(Neon PostgreSQL<br/>metadata + facts)]
+    D --> E[Topic / escalation /<br/>country classifiers]
+    E --> F[Mention extraction<br/>gazetteer + NER]
+    F --> G[Entity resolution<br/>blocking + union-find + review]
+    G --> H[Bilingual layer<br/>romanization + translation cache]
+    H --> I[Bake static data.json]
+    I --> J[Cloudflare Worker<br/>public dashboard]
+```
+
+Every 6 hours a GitHub Actions cron job runs the full pipeline. Article text
+goes to R2 (gzipped and keyed by content hash), and metadata and facts go to
+Postgres. The public dashboard is one static JSON file baked on each run and
+served by a Cloudflare Worker, so nothing runs when nobody is viewing it.
+
+### Design principles
+
+The system is built around **provenance**. Every entity, classification and
+merge decision records the document, character span and extractor version
+that produced it.
+
+1. **Offsets are always valid:** `document.text[start:end] == mention.text`, enforced by tests.
+2. **Facts are append-only:** they are superseded, never overwritten, so the system can answer *"what did we believe on date X?"*
+3. **Nothing is deleted, only retracted**, and retractions propagate downstream.
+4. **Extractors are versioned**, and every output records the version that produced it.
+5. **Nothing is domain-hardcoded:** languages and object types are configuration, not Python.
+
+Major architectural decisions are recorded as [ADRs](docs/adr/).
 
 ## Engineering highlights
 
-A few of the bugs that shaped the design — the kind of thing tests don't
-catch and only real output reveals:
+These are real bugs found in production output that shaped the design:
 
-- **Normalization was silently corrupting stored offsets.** Early on,
-  normalization shortened stored text in place, which meant every mention's
-  character offsets pointed at the wrong span. Fix: normalize only for
-  comparison, never touch what's stored. This is now a hard invariant with
-  its own test (`document.text[start:end] == mention.text`, always).
-- **The most-mentioned entity in the corpus was the one getting dropped.**
-  A single repeated Arabic string (إيران, "Iran") produced one oversized
-  blocking bucket that blew past the block-size guard and got discarded
-  wholesale — so the *most* mentioned entities were the *most* likely to
-  vanish. Fix: collapse byte identical strings before blocking. Entity count
-  went from 3,769 phantom fragments to 87 real ones.
-- **A perfect AUC score was a bug report, not a win.** The first pair
-  scorer hit AUC 1.000 because its training features leaked the label,
-  positive pairs happened to share a source and land a day apart, negatives
-  didn't, so the model learned `same_source` instead of learning names.
-  Redrawing negative examples from a seeded RNG dropped AUC to a believable
-  0.935.
-- **A charset guess turned Arabic headlines into Cyrillic mojibake.**
-  `chardet`'s statistical guess beat the HTTP header's declared charset
-  often enough that real CNN Arabic headlines were stored as garbage, which
-  a translation API then "faithfully" translated into nonsense. Fixed by
-  trusting the declared header first, UTF-8 second, statistics last.
-- **Every scheduled pipeline run was silently timing out.** Once the source
-  count grew to 21, `BaseScraper` had no wall-clock budget at all — one slow
-  or half-dead source could consume the entire 30-minute GitHub Actions
-  window, and every run since got cancelled before publishing anything. Fixed
-  with a per-source time budget enforced inside the fetch loop, so one dead
-  source degrades to a partial yield instead of blocking every source queued
-  behind it.
+- **Normalization was corrupting stored offsets.** Normalizing text in place
+  shifted every mention's character offsets. Now text is normalized only for
+  comparison, never in storage, and a test enforces that invariant.
+- **The most-mentioned entity was the one being dropped.** One repeated
+  string (إيران, "Iran") created an oversized blocking bucket that the
+  size guard discarded wholesale. Collapsing byte-identical strings before
+  blocking took the corpus from **3,769 fragments to 87 real entities**.
+- **A perfect AUC was a bug report.** The first pair scorer hit AUC 1.000
+  because its features leaked the label: positive pairs shared a source and
+  date. Re-sampling negatives fixed the leak and gave a believable **0.935**.
+- **Charset guessing turned Arabic into Cyrillic mojibake.** `chardet`
+  overrode correct HTTP headers. The fix trusts the declared charset first,
+  then UTF-8, and uses statistical detection only as a last resort.
+- **One dead source cancelled every scheduled run.** With 21 sources and no
+  per-source time budget, a single hanging site consumed the whole 30-minute
+  CI window. A per-source budget now degrades it to a partial result instead.
 
-## What's built vs. what's next
+## Dashboard
 
-| Milestone | Status | What it covers |
+![Dashboard feed and review queue](docs/screenshots/dashboard-feed.png)
+
+## Roadmap
+
+| Milestone | Status | Scope |
 |---|---|---|
-| M1 — Provenance foundation | ✅ Done | Every fact traces to a document, span, and extractor version |
-| M1.5 — Hosting & storage | ✅ Done | R2 blob storage + Neon Postgres, migrated off a paid host |
-| M2 — Language adapters | ✅ Done | Arabic + English behind one `LanguageAdapter` interface |
-| M3 — Mention extraction | ✅ Done | Gazetteer (F1 0.90) + transformer NER (F1 0.89) |
-| M4 — Entity resolution | ✅ Done | Blocking, learned scorer, union-find, human review queue |
-| M5 — Bilingual layer | 🟡 In progress | Romanization + bidirectional Arabic/English search |
-| M6 — Links & graph | ⬜ Not started | Typed, evidenced relationships between entities |
-| M7 — Events & geography | ⬜ Not started | Event extraction, date resolution, place gazetteer |
-| M8+ — Reliability, alerting, API | ⬜ Not started | See `docs/AGENT_BRIEF.md` for the full roadmap |
-
-## Non-negotiable principles
-
-The rules that hold even when a shortcut would pass tests:
-
-1. Every derived fact records its origin — document, span, extractor, version.
-2. Character offsets are always valid: `text[start:end] == mention_text`.
-3. Nothing is domain-hardcoded — object types and languages are config.
-4. Extractors are versioned; every output records which version produced it.
-5. Facts are append-only — superseded, never overwritten in place.
-6. Nothing is deleted, only retracted, and retraction propagates downstream.
-7. No performance change ships without a before/after benchmark.
+| M1: Provenance foundation | ✅ | Every fact traces to document, span and extractor version |
+| M1.5: Hosting & storage | ✅ | R2 blob storage + Neon Postgres, $0 hosting |
+| M2: Language adapters | ✅ | Arabic + English behind one `LanguageAdapter` interface |
+| M3: Mention extraction | ✅ | Gazetteer + transformer NER |
+| M4: Entity resolution | ✅ | Blocking, learned scorer, union-find, review queue |
+| M5: Bilingual layer | 🟡 | Romanization + bidirectional Arabic/English search |
+| M6: Links & graph | ⬜ | Typed, evidenced relationships between entities |
+| M7: Events & geography | ⬜ | Event extraction, date resolution, place gazetteer |
 
 ## Tech stack
 
-- **Language:** Python 3.11
-- **Database:** PostgreSQL 16 (Neon, serverless), SQLAlchemy 2, Alembic migrations
-- **Storage:** Cloudflare R2 (content-addressed, gzipped article text)
-- **Scraping:** `requests` + `beautifulsoup4`, per-source selector isolation, budget-aware retry
-- **NLP:** hand-written Aho-Corasick gazetteer, transformer NER (CAMeLBERT), custom Arabic normalization
-- **Entity resolution:** blocking, a learned pair scorer, union-find with complete-linkage guard
-- **Testing:** pytest, Hypothesis (property-based testing for text normalization)
-- **CI/CD:** GitHub Actions — scheduled ingestion, migration gates, contract checks, public smoke tests
-- **Serving:** static JSON baked every run, Cloudflare Workers, zero always-on compute
+**Python 3.11** · **PostgreSQL** (Neon) · **SQLAlchemy 2** · **Alembic** ·
+**Cloudflare R2 & Workers** · **requests / BeautifulSoup** · **CAMeLBERT** ·
+**pytest + Hypothesis** · **GitHub Actions**
 
-## Repository layout
+## Project structure
 
 ```text
-arabic_osint_platform/
-├── src/
-│   ├── scraping/        # 21 per-source scrapers, shared BaseScraper
-│   ├── pipeline/        # ingest -> process -> extract -> resolve -> translate -> bake
-│   ├── resolve/         # blocking, pair scoring, union-find
-│   ├── lang/            # Arabic/English LanguageAdapter, romanization
-│   ├── store/           # SQLAlchemy ORM, provenance, blob storage
-│   ├── ops/             # ledger, runtime orchestration, health
-│   └── search/          # bidirectional entity search
-├── migrations/          # Alembic, one linear head
-├── tests/
-│   ├── unit/            # 476 tests
-│   ├── integration/     # Postgres-backed migration tests
-│   └── golden/          # hand-labeled Arabic name pairs
-├── docs/
-│   ├── adr/             # one ADR per real architectural decision
-│   └── AGENT_BRIEF.md   # the full spec and milestone roadmap
-├── .github/workflows/   # scheduled pipeline, tests, contract checks
-└── main.py              # CLI entry point
+src/
+├── scraping/     # 21 per-source scrapers on a shared BaseScraper
+├── pipeline/     # ingest → process → extract → resolve → translate → bake
+├── extract/      # gazetteer + NER mention extraction
+├── resolve/      # blocking, pair scoring, union-find
+├── lang/         # Arabic/English LanguageAdapter, romanization
+├── store/        # ORM, provenance, blob storage
+├── ops/          # pipeline ledger, orchestration, health checks
+└── search/       # bidirectional entity search
+migrations/       # Alembic schema migrations
+tests/            # unit, integration (Postgres) and golden name-pair sets
+docs/adr/         # architecture decision records
 ```
 
-## Running locally
+## Run locally
 
 ```bash
 git clone https://github.com/gdayoub/arabic-osint-intelligence-platform.git
-cd arabic_osint_platform
-python3.11 -m venv .venv
-source .venv/bin/activate
+cd arabic-osint-intelligence-platform
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # point DATABASE_URL at a local/dev Postgres
+cp .env.example .env          # set DATABASE_URL to a local Postgres
 
 python main.py init-core-db
-python main.py run-core-pipeline --run-id local-dev-1 --limit-per-source 10
+python main.py run-core-pipeline --run-id local-dev --limit-per-source 10
 ```
 
-## Testing
+Run the tests:
 
 ```bash
 pytest tests/unit -q
 ```
 
-476 tests: unit coverage over the full pipeline, Hypothesis property based
-tests for Arabic normalization (idempotence, offset stability under any
-Unicode input), and a hand labeled  set of Arabic name pairs that
-locks in exactly which names should and shouldn't resolve to the same
-entity.
+The suite includes Hypothesis property tests for Arabic normalization
+(idempotence and offset stability under arbitrary Unicode) and a
+hand-labeled golden set of Arabic name pairs that pins down which names
+should and should not resolve to the same entity.
 
+## Author
 
+**George Dayoub**: [GitHub](https://github.com/gdayoub) · [Portfolio](https://george-dayoub-portfolio.vercel.app)
+
+## License
+
+[MIT](LICENSE)

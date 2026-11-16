@@ -45,3 +45,6 @@ dist/
 
 # hypothesis keeps a database of failing examples plus temp files
 .hypothesis/
+
+# Hypothesis test cache
+.hypothesis/
