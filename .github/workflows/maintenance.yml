@@ -12,6 +12,7 @@ on:
         type: choice
         options:
           - retract-mojibake
+          - db-size-report
       apply:
         description: 'Actually apply changes (unchecked = dry run)'
         required: false
@@ -48,7 +49,12 @@ jobs:
       - name: Refuse maintenance writes on a stale or drifted core schema
         run: python scripts/verify_core_schema.py
 
+      - name: Report database size (read-only)
+        if: inputs.task == 'db-size-report'
+        run: python scripts/db_size_report.py
+
       - name: Run maintenance task
+        if: inputs.task != 'db-size-report'
         run: |
           if [ "${{ inputs.apply }}" = "true" ]; then
             python main.py ${{ inputs.task }} --apply
