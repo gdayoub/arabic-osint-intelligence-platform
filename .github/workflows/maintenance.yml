@@ -13,6 +13,7 @@ on:
         options:
           - retract-mojibake
           - db-size-report
+          - prune-retracted-evidence
       apply:
         description: 'Actually apply changes (unchecked = dry run)'
         required: false
@@ -53,8 +54,18 @@ jobs:
         if: inputs.task == 'db-size-report'
         run: python scripts/db_size_report.py
 
+      - name: Prune retracted entity evidence (one-off cleanup, ADR 0031)
+        if: inputs.task == 'prune-retracted-evidence'
+        run: |
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            python main.py prune-retracted-evidence --apply --compact full
+          else
+            python main.py prune-retracted-evidence
+          fi
+          python scripts/db_size_report.py --limit 8
+
       - name: Run maintenance task
-        if: inputs.task != 'db-size-report'
+        if: inputs.task == 'retract-mojibake'
         run: |
           if [ "${{ inputs.apply }}" = "true" ]; then
             python main.py ${{ inputs.task }} --apply

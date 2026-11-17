@@ -25,6 +25,7 @@ from src.pipeline.review_core import (
     run_manual_split,
     run_review_decision,
 )
+from src.pipeline.prune_evidence import run_prune_retracted_evidence
 from src.pipeline.retract_mojibake import run_retract_mojibake
 from src.pipeline.translate_core import run_core_translation
 from src.pipeline.run_pipeline import run_full_pipeline
@@ -183,6 +184,16 @@ def build_parser() -> argparse.ArgumentParser:
     mojibake_parser = sub.add_parser("retract-mojibake", help="Retract documents stored with a broken character encoding")
     mojibake_parser.add_argument("--apply", action="store_true", help="Actually retract; omit for a dry run")
 
+    prune_parser = sub.add_parser(
+        "prune-retracted-evidence",
+        help="Delete entity_mentions/provenance rows of retracted entity generations (ADR 0031)",
+    )
+    prune_parser.add_argument("--apply", action="store_true", help="Actually delete; omit for a dry run")
+    prune_parser.add_argument(
+        "--compact", choices=["none", "vacuum", "full"], default="none",
+        help="After --apply: VACUUM (reuse space) or VACUUM FULL (return space to the quota; locks tables)",
+    )
+
     bake_parser = sub.add_parser("bake-dashboard", help="Write a static data.json snapshot for the Pages dashboard (M1.5)")
     bake_parser.add_argument("--out", type=str, default="dist/data.json")
     bake_parser.add_argument("--recent-limit", type=int, default=30)
@@ -313,6 +324,13 @@ def main() -> None:
         stats = run_retract_mojibake(dry_run=not args.apply)
         mode = "RETRACTED" if args.apply else "DRY RUN (use --apply to retract)"
         print(f"{mode}: scanned={stats.scanned} corrupted={stats.retracted} ids={stats.document_ids}")
+    elif args.command == "prune-retracted-evidence":
+        stats = run_prune_retracted_evidence(apply=args.apply, compact=args.compact)
+        mode = "PRUNED" if args.apply else "DRY RUN (use --apply to delete)"
+        print(
+            f"{mode}: retracted_entities={stats.retracted_entities} "
+            f"entity_mentions={stats.entity_mentions} provenance={stats.provenance}"
+        )
     elif args.command == "bake-dashboard":
         data = run_bake(Path(args.out), recent_limit=args.recent_limit)
         print(f"wrote {args.out}: total_raw={data['stats']['total_raw']} total_processed={data['stats']['total_processed']} recent={len(data['recent'])}")
