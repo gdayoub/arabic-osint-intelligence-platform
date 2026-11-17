@@ -78,6 +78,13 @@ jobs:
       # Missing DeepL skips translation. A configured provider runs in
       # best-effort mode: a provider failure finishes the ledgered run as
       # degraded after baking the still-usable Arabic snapshot.
+      # Resolution rebuilds every entity each run; drop the previous
+      # generation's per-mention evidence first so storage stays bounded
+      # (ADR 0031). Runs before the ledger because a full database fails
+      # the ledger's very first insert.
+      - name: Prune retracted entity evidence
+        run: python main.py prune-retracted-evidence --apply --compact vacuum
+
       - name: Run ledgered core pipeline
         env:
           REVIEW_MARGIN: ${{ inputs.review_margin || '0.15' }}
