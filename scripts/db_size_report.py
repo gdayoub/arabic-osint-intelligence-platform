@@ -65,6 +65,24 @@ def main() -> int:
                 """
             )
         ).mappings().all()
+        stage_timings = conn.execute(
+            text(
+                """
+                WITH recent AS (
+                    SELECT run_id, MAX(occurred_at) AS last_at FROM pipeline_events
+                    WHERE stage IS NOT NULL GROUP BY run_id ORDER BY last_at DESC LIMIT 4
+                )
+                SELECT e.run_id, e.stage,
+                       MIN(e.occurred_at) FILTER (WHERE e.event_type = 'stage_started') AS started,
+                       MAX(e.occurred_at) FILTER (WHERE e.event_type IN ('stage_succeeded','stage_failed')) AS ended,
+                       MAX(e.event_type) FILTER (WHERE e.event_type IN ('stage_succeeded','stage_failed')) AS outcome
+                FROM pipeline_events e JOIN recent r USING (run_id)
+                WHERE e.stage IS NOT NULL AND e.source IS NULL
+                GROUP BY e.run_id, e.stage
+                ORDER BY e.run_id, started
+                """
+            )
+        ).mappings().all()
         provenance_by_target = conn.execute(
             text("SELECT target_table, COUNT(*) AS n FROM provenance GROUP BY 1 ORDER BY 2 DESC")
         ).mappings().all()
@@ -83,6 +101,13 @@ def main() -> int:
             f"  {state:<10} entities={r['entities']:,} entity_mentions={r['entity_mentions']:,} "
             f"provenance={r['provenance_rows']:,}"
         )
+    print("\nstage timings, last 4 runs with stage events:")
+    for r in stage_timings:
+        took = (
+            f"{(r['ended'] - r['started']).total_seconds() / 60:6.1f} min"
+            if r["started"] and r["ended"] else "   (no end)"
+        )
+        print(f"  {r['run_id']:<28}{r['stage']:<24}{took}  {r['outcome'] or 'unfinished'}  start={r['started']}")
     print("\nprovenance rows by target table:")
     for r in provenance_by_target:
         print(f"  {r['target_table']:<24}{r['n']:>12,}")
