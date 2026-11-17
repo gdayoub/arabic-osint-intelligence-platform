@@ -48,6 +48,26 @@ def main() -> int:
         conn.execute(text("SET TRANSACTION READ ONLY"))
         db_bytes = conn.execute(text("SELECT pg_database_size(current_database())")).scalar_one()
         rows = conn.execute(TABLE_SIZES, {"limit": args.limit}).mappings().all()
+        # Entity resolution rebuilds every run and retracts the previous
+        # generation; show how much evidence belongs to live vs retracted rows.
+        evidence = conn.execute(
+            text(
+                """
+                SELECT e.retracted,
+                       COUNT(DISTINCT e.id) AS entities,
+                       COUNT(em.mention_id) AS entity_mentions,
+                       (SELECT COUNT(*) FROM provenance p
+                         JOIN entities e2 ON p.target_table = 'entities' AND p.target_id = e2.id
+                        WHERE e2.retracted = e.retracted) AS provenance_rows
+                FROM entities e
+                LEFT JOIN entity_mentions em ON em.entity_id = e.id
+                GROUP BY e.retracted
+                """
+            )
+        ).mappings().all()
+        provenance_by_target = conn.execute(
+            text("SELECT target_table, COUNT(*) AS n FROM provenance GROUP BY 1 ORDER BY 2 DESC")
+        ).mappings().all()
 
     print(f"database size: {_mb(db_bytes)}\n")
     print(f"{'table':<36}{'rows':>12}{'total':>12}{'heap':>12}{'indexes':>12}{'dead rows':>12}")
@@ -56,6 +76,16 @@ def main() -> int:
             f"{r['table_name']:<36}{r['approx_rows']:>12,}{_mb(r['total_bytes']):>12}"
             f"{_mb(r['heap_bytes']):>12}{_mb(r['index_bytes']):>12}{r['dead_rows']:>12,}"
         )
+    print("\nentity evidence by retraction state:")
+    for r in evidence:
+        state = "retracted" if r["retracted"] else "live"
+        print(
+            f"  {state:<10} entities={r['entities']:,} entity_mentions={r['entity_mentions']:,} "
+            f"provenance={r['provenance_rows']:,}"
+        )
+    print("\nprovenance rows by target table:")
+    for r in provenance_by_target:
+        print(f"  {r['target_table']:<24}{r['n']:>12,}")
     return 0
 
 
