@@ -181,3 +181,45 @@ def test_record_document_fact_supersede_links_without_mutating_original(session,
 
     assert revised.supersedes_id == original.id
     assert original.payload == {"value": "Draft Title"}  # untouched — P5, never mutated in place
+
+
+def test_add_new_entity_evidence_writes_one_link_and_provenance_per_mention(session, ontology, blob_store):
+    from sqlalchemy import func, select
+
+    from src.store.orm import EntityMentionORM, ProvenanceORM
+    from src.store.provenance import add_new_entity_evidence, create_entity
+
+    extractor = register_extractor_version(session, "resolver", "1.0.0")
+    mentions = []
+    for i in range(4):
+        text = f"قال بايدن اليوم {i}"
+        document = create_document(
+            session, source="AlJazeeraArabic", text=text, content_hash=f"bulk-{i}",
+            blob_store=blob_store, url=f"https://example.com/bulk-{i}",
+        )
+        start = text.index("بايدن")
+        mentions.append(
+            create_mention(
+                session, document=document, text="بايدن", start=start, end=start + 5,
+                object_type="person", extractor_version=extractor, ontology=ontology, language="ar",
+            )
+        )
+    entity = create_entity(
+        session, object_type="person", canonical_name="بايدن", properties={},
+        source_mention=mentions[0], extractor_version=extractor, ontology=ontology,
+    )
+
+    # the founding mention and an in-input duplicate are skipped
+    added = add_new_entity_evidence(session, entity, mentions + [mentions[1]], extractor)
+    session.flush()
+
+    assert added == 3
+    links = session.scalar(
+        select(func.count()).select_from(EntityMentionORM).where(EntityMentionORM.entity_id == entity.id)
+    )
+    prov = session.scalar(
+        select(func.count()).select_from(ProvenanceORM).where(
+            ProvenanceORM.target_table == "entities", ProvenanceORM.target_id == entity.id
+        )
+    )
+    assert (links, prov) == (4, 4)
