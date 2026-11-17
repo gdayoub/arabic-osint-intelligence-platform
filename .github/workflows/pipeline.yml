@@ -36,9 +36,13 @@ jobs:
     # the current corpus size a recompute takes seconds... if it stops
     # taking seconds the fix is incremental blocking"). The corpus grew past
     # that point (2026-08-25), so the job needs more room than the 30-minute
-    # budget that was sized only for ingestion. Raise this again -- or build
-    # the incremental fix -- once resolution itself is measured and bounded.
-    timeout-minutes: 55
+    # budget that was sized only for ingestion.
+    # Measured 2026-11-17 (db_size_report stage timings): ingest 18 min,
+    # process 4, extract 16, resolve still running when the old 55-minute
+    # limit cancelled the job. Resolve's evidence writes are now bulk
+    # (add_new_entity_evidence); 120 minutes leaves headroom while runs are
+    # still 6 hours apart. The --lease-minutes below must stay under this.
+    timeout-minutes: 120
     permissions:
       contents: read
     env:
@@ -100,7 +104,7 @@ jobs:
             --translation-mode "$translation_mode" \
             --review-margin "$REVIEW_MARGIN" \
             --limit-per-source "$LIMIT_PER_SOURCE" \
-            --lease-minutes 50 \
+            --lease-minutes 110 \
             --out dist/data.json
 
       - run: cp src/api/static/dashboard.html dist/index.html

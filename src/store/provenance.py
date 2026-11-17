@@ -256,6 +256,48 @@ def add_entity_evidence(
     )
 
 
+def add_new_entity_evidence(
+    session: Session,
+    entity: Entity,
+    mentions: list[Mention],
+    extractor_version: ExtractorVersion,
+) -> int:
+    """Attach many mentions to an entity created in this same transaction.
+
+    Same rows as calling ``add_entity_evidence`` per mention, but without its
+    per-row existence check. That check costs a flush plus a SELECT for every
+    mention, which against a remote database turned resolution's ~110k links
+    into ~340k round trips and pushed the scheduled run past its timeout.
+    A brand-new entity has only its founding link, so duplicates can come
+    only from the input itself, and those are skipped here in memory.
+    The pending rows go out in batched multi-row INSERTs on the next flush.
+    """
+    seen: set[int] = set(
+        session.scalars(
+            select(EntityMentionORM.mention_id).where(EntityMentionORM.entity_id == entity.id)
+        )
+    )
+    links: list[EntityMentionORM] = []
+    evidence: list[ProvenanceORM] = []
+    for mention in mentions:
+        if mention.id in seen:
+            continue
+        seen.add(mention.id)
+        links.append(EntityMentionORM(entity_id=entity.id, mention_id=mention.id))
+        evidence.append(
+            ProvenanceORM(
+                target_table="entities",
+                target_id=entity.id,
+                document_id=mention.document_id,
+                mention_id=mention.id,
+                extractor_version_id=extractor_version.id,
+            )
+        )
+    session.add_all(links)
+    session.add_all(evidence)
+    return len(links)
+
+
 def link_entities(
     session: Session,
     link_type: str,

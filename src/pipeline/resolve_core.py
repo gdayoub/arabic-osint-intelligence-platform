@@ -38,7 +38,7 @@ from src.resolve.scorer import PairScorer
 from src.resolve.stable_entities import acquire_resolution_output_lock
 from src.store.database import get_core_session
 from src.store.orm import DocumentORM, EntityORM, MentionORM
-from src.store.provenance import add_entity_evidence, create_entity, register_extractor_version
+from src.store.provenance import add_new_entity_evidence, create_entity, register_extractor_version
 
 logger = logging.getLogger("pipeline.resolve_core")
 
@@ -420,8 +420,14 @@ def resolve_all(
             extractor_version=resolver_version,
             ontology=ontology,
         )
-        for other in members[1:]:
-            add_entity_evidence(session, entity, _as_mention(mention_rows[other]), resolver_version)
+        # bulk: one existence query per entity instead of a flush + SELECT
+        # per mention (see add_new_entity_evidence)
+        add_new_entity_evidence(
+            session,
+            entity,
+            [_as_mention(mention_rows[other]) for other in members[1:]],
+            resolver_version,
+        )
         stats.entities_created += 1
 
     return stats
