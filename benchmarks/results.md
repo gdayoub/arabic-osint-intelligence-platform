@@ -206,3 +206,18 @@ does not earn its keep until it handles names the gazetteer does not know,
 and that needs a training set drawn from blocking-surviving pairs rather
 than the arbitrary name pairs it was fit on. 17 of 24 current negatives
 never survive blocking, so the model was graded on an exam it never sits.
+
+## 2026-09-08: Atlas country-summary callback
+
+Windows, bundled Node runtime. Synthetic workload repeats the frozen 64-article
+public demo to 8,293 rows; 176 polygon lookups, mean of 5 iterations. This tests
+aggregation cost only, not production render time or database bake latency.
+
+- Before: filter and aggregate all rows inside each polygon lookup: 299.15 ms.
+- After: build one country summary Map per filter render, then keyed lookups: 1.69 ms.
+
+The same filterArticles/countriesFor functions and article rows were used on both
+sides. UI data-logic tests confirm country totals match their contributing rows.
+This removes repeated aggregation from color and hover callbacks without changing
+risk arithmetic. Globe.GL itself adds about 1.89 MB raw plus 260 KB geometry;
+these are intentional feature costs, not a claim of faster initial page loading.

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
+import mimetypes
 import os
 from pathlib import Path
 import re
@@ -63,6 +64,15 @@ _STATIC_RELEASE_ASSETS = (
     ("index.html", "dashboard.html"),
     ("country.html", "country.html"),
     ("high_risk.html", "high_risk.html"),
+    ("engine.html", "engine.html"),
+    ("assets/atlas.css", "assets/atlas.css"),
+    ("assets/atlas.mjs", "assets/atlas.mjs"),
+    ("assets/atlas-model.mjs", "assets/atlas-model.mjs"),
+    ("assets/globe.gl.min.js", "assets/globe.gl.min.js"),
+    ("assets/countries.geojson", "assets/countries.geojson"),
+    ("assets/demo.json", "assets/demo.json"),
+    ("assets/globe-LICENSE", "assets/globe-LICENSE"),
+    ("assets/README.md", "assets/README.md"),
 )
 _TRANSLATION_MODES = frozenset({"skip", "best-effort"})
 
@@ -477,7 +487,7 @@ def dashboard_shell_artifacts(
             ReleaseArtifact(
                 path=public_path,
                 data=data,
-                content_type="text/html; charset=utf-8",
+                content_type=(mimetypes.guess_type(public_path)[0] or "application/octet-stream") + "; charset=utf-8",
             )
         )
     return tuple(artifacts)
